@@ -2,32 +2,16 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# ─── SAYFA AYARLARI ──────────────────────────────────────────────────────────
+# ─── SAYFA AYARLARI (HAM HTML / CSS TAMAMEN KALDIRILDI) ────────────────────────
 st.set_page_config(page_title="Filo Dönüşümü Karar Destek Sistemi", layout="wide")
 
-# Modern Karanlık Tema Renk Paleti (Matplotlib Grafiklerine Aktarılacak)
+# Matplotlib için standart renk paleti tanımları
 COLORS = {
-    "bg": "#0a0f1e",
-    "surface": "#111827",
-    "card": "#1a2236",
-    "border": "#1e3a5f",
-    "accent": "#00d4ff",
-    "accent2": "#00ff9d",
-    "text": "#e2e8f0",
-    "muted": "#64748b",
     "s1": "#38bdf8",     # Senaryo 1 - Mavi
     "s2": "#a78bfa",     # Senaryo 2 - Mor
     "s3": "#34d399",     # Senaryo 3 - Yeşil
     "current": "#fb923c" # Mevcut Durum - Turuncu
 }
-
-# Streamlit Arayüzü İçin Sabit CSS
-st.markdown(f"""
-    <style>
-    .stApp {{ background-color: {COLORS['bg']}; color: {COLORS['text']}; }}
-    div[data-testid="stMetricValue"] > div {{ color: {COLORS['accent']}; font-family: 'Space Mono', monospace; }}
-    </style>
-""", unsafe_allow_html=True)
 
 # ─── YARDIMCI FONKSİYONLAR ────────────────────────────────────────────────────
 def fmt_k(n):
@@ -37,38 +21,35 @@ def fmt_k(n):
         return f"{n / 1_000:.0f}K ₺"
     return f"{n:,.0f} ₺".replace(",", ".")
 
-# ─── SABİT ÜST BAŞLIK ─────────────────────────────────────────────────────────
-st.markdown(f"""
-    <div style="text-align: center; padding: 10px; border-bottom: 1px solid {COLORS['border']}; margin-bottom: 25px;">
-        <div style="font-size: 13px; color: {COLORS['accent']}; letter-spacing: 0.25em; font-weight: bold;">⚡ ELEKTRİKLİ ARAÇ GEÇİŞ ANALİZİ</div>
-        <h2 style="margin: 5px 0; font-weight: 800; color: {COLORS['accent']};">Filo Dönüşümü Karar Destek Sistemi</h2>
-        <p style="color: {COLORS['muted']}; font-size: 13px; margin: 0;">Sol panelden girilen verilere göre analiz sonuçları anlık hesaplanır.</p>
-    </div>
-""", unsafe_allow_html=True)
+# ─── GÜVENLİ YERLEŞİK ÜST BAŞLIK ──────────────────────────────────────────────
+st.caption("⚡ ELEKTRİKLİ ARAÇ GEÇİŞ ANALİZİ")
+st.title("Filo Dönüşümü Karar Destek Sistemi")
+st.write("Sol panelden girilen verilere göre analiz sonuçları anlık hesaplanır.")
+st.divider()
 
 # ─── GÜVENLİ GİRDİ PANELİ (SIDEBAR) ──────────────────────────────────────────
-st.sidebar.markdown(f"<h3 style='color: {COLORS['accent']};'>📋 Analiz Parametreleri</h3>", unsafe_allow_html=True)
+st.sidebar.title("📋 Analiz Parametreleri")
 
 # 1. Genel Ayarlar
-st.sidebar.subheader("🚗 Genel Filo Ayarları")
+st.sidebar.header("🚗 Genel Filo Ayarları")
 arac_sayisi = st.sidebar.number_input("Toplam Araç Sayısı", min_value=1, value=30, step=1)
 analiz_yili = st.sidebar.number_input("Analiz Süresi (Yıl)", min_value=3, max_value=20, value=8, step=1)
 tufe = st.sidebar.number_input("Yıllık TÜFE Oranı (%)", min_value=0.0, value=35.0, step=0.5)
 
 # 2. Yakıtlı Araç Ayarları
-st.sidebar.subheader("⛽ Yakıtlı Araç Giderleri")
+st.sidebar.header("⛽ Yakıtlı Araç Giderleri")
 yakit_arac_birim_maliyet = st.sidebar.number_input("Araç Alış Fiyatı (₺)", min_value=0, value=1200000, step=50000)
 aylik_yakit_gideri = st.sidebar.number_input("Aylık Yakıt (Araç Başı ₺)", min_value=0, value=8000, step=500)
 aylik_bakim_gideri = st.sidebar.number_input("Aylık Bakım (Araç Başı ₺)", min_value=0, value=2500, step=200)
 
 # 3. Elektrikli Araç Ayarları
-st.sidebar.subheader("⚡ Elektrikli Araç Giderleri")
+st.sidebar.header("⚡ Elektrikli Araç Giderleri")
 elektrik_arac_birim_maliyet = st.sidebar.number_input("Elektrikli Araç Fiyatı (₺)", min_value=0, value=2200000, step=50000)
 aylik_elektrik_gideri = st.sidebar.number_input("Aylık Şarj (Araç Başı ₺)", min_value=0, value=3200, step=200)
 aylik_elektrik_bakim_gideri = st.sidebar.number_input("Aylık Bakım (Araç Başı ₺)", min_value=0, value=1200, step=100)
 
 # 4. Altyapı Ayarları
-st.sidebar.subheader("🏗️ Altyapı Yatırımları (₺)")
+st.sidebar.header("🏗️ Altyapı Yatırımları (₺)")
 altyapi_s1 = st.sidebar.number_input("Senaryo 1 (1/3 Geçiş) Altyapı", min_value=0, value=500000, step=50000)
 altyapi_s2 = st.sidebar.number_input("Senaryo 2 (2/3 Geçiş) Altyapı", min_value=0, value=900000, step=50000)
 altyapi_s3 = st.sidebar.number_input("Senaryo 3 (Tam Geçiş) Altyapı", min_value=0, value=1500000, step=50000)
@@ -106,21 +87,19 @@ def senaryo_hesapla(elektrik_orani, altyapi_yatirimi):
         })
     return {"veriler": veriler, "bas_bas": bas_bas, "toplam_ilk_yatirim": toplam_ilk_yatirim, "e_arac": e_arac}
 
-# Hesaplamaları tetikle
+# Hesaplamaları çalıştır
 s1 = senaryo_hesapla(1/3, altyapi_s1)
 s2 = senaryo_hesapla(2/3, altyapi_s2)
 s3 = senaryo_hesapla(1.0, altyapi_s3)
 
-# ─── SAĞ PANEL (ANA EKRAN) GÖRÜNÜMÜ ──────────────────────────────────────────
+# ─── ANA EKRAN ÇIKTILARI ──────────────────────────────────────────────────────
 st.subheader("🎯 Başabaş Noktası Özeti")
 col1, col2, col3 = st.columns(3)
 with col1: st.metric("Senaryo 1 (1/3 Elektrik)", f"{s1['bas_bas']} Yıl" if s1['bas_bas'] else "Amorti Edilemiyor")
 with col2: st.metric("Senaryo 2 (2/3 Elektrik)", f"{s2['bas_bas']} Yıl" if s2['bas_bas'] else "Amorti Edilemiyor")
 with col3: st.metric("Senaryo 3 (Tam Elektrik)", f"{s3['bas_bas']} Yıl" if s3['bas_bas'] else "Amorti Edilemiyor")
 
-st.markdown("<br>", unsafe_allow_html=True)
-
-# Özet Finansal Tablo
+# Finansal Özet Tablo
 son_yil_idx = int(analiz_yili) - 1
 ozet_df = pd.DataFrame({
     "Dönüştürülen Araç": [f"{s1['e_arac']} araç", f"{s2['e_arac']} araç", f"{s3['e_arac']} araç"],
@@ -129,78 +108,37 @@ ozet_df = pd.DataFrame({
 }, index=["Senaryo 1 (1/3 Geçiş)", "Senaryo 2 (2/3 Geçiş)", "Senaryo 3 (Tam Geçiş)"])
 
 st.dataframe(ozet_df, use_container_width=True)
+st.divider()
 
-st.markdown("---")
-
-# Grafik Seçim Alanı
+# Grafik Tipi Seçimi
 chart_type = st.radio(
     "Grafik Görünümü Seçin:",
     ["📈 Başabaş Analizi (Kümülatif)", "📊 Yıllık Net Tasarruf", "💰 Toplam İşletme Giderleri"],
     horizontal=True
 )
 
-# ─── MATPLOTLIB İLE GRAFİK ÜRETİMİ (MATLAB GÖRÜNÜMÜ) ──────────────────────────
-# Grafiğin arka plan stilini uygulamanın karanlık temasıyla eşitliyoruz
-plt.rcParams.update({
-    'figure.facecolor': COLORS['card'],
-    'axes.facecolor': COLORS['surface'],
-    'axes.edgecolor': COLORS['border'],
-    'text.color': COLORS['text'],
-    'axes.labelcolor': COLORS['text'],
-    'xtick.color': COLORS['text'],
-    'ytick.color': COLORS['text'],
-    'grid.color': COLORS['border'],
-    'grid.alpha': 0.3
-})
-
-fig, ax = plt.subplots(figsize=(10, 4.5))
+# ─── MATPLOTLIB GÜVENLİ ÇİZİM MOTORU ──────────────────────────────────────────
+fig, ax = plt.subplots(figsize=(10, 4))
 
 if "Başabaş" in chart_type:
-    ax.plot(yillar, [v['kumulatif_kar'] for v in s1['veriler']], label="Senaryo 1 (1/3)", color=COLORS['s1'], linewidth=2.5, marker='o')
-    ax.plot(yillar, [v['kumulatif_kar'] for v in s2['veriler']], label="Senaryo 2 (2/3)", color=COLORS['s2'], linewidth=2.5, marker='s')
-    ax.plot(yillar, [v['kumulatif_kar'] for v in s3['veriler']], label="Senaryo 3 (Tam)", color=COLORS['s3'], linewidth=2.5, marker='^')
-    ax.axhline(0, color=COLORS['current'], linestyle='--', linewidth=1.5, label="Amortisman Eşiği (0 ₺)")
-    ax.set_title("Yıllara Göre Kümülatif Kâr / Zarar Seyri", fontsize=12, fontweight='bold', pad=15)
+    ax.plot(yillar, [v['kumulatif_kar'] for v in s1['veriler']], label="Senaryo 1 (1/3)", color=COLORS['s1'], linewidth=2, marker='o')
+    ax.plot(yillar, [v['kumulatif_kar'] for v in s2['veriler']], label="Senaryo 2 (2/3)", color=COLORS['s2'], linewidth=2, marker='s')
+    ax.plot(yillar, [v['kumulatif_kar'] for v in s3['veriler']], label="Senaryo 3 (Tam)", color=COLORS['s3'], linewidth=2, marker='^')
+    ax.axhline(0, color=COLORS['current'], linestyle='--', linewidth=1.2, label="Amortisman Sınırı (0 ₺)")
+    ax.set_title("Yıllara Göre Kümülatif Kâr / Zarar Seyri")
     ax.set_ylabel("Kümülatif Kazanç (₺)")
 
 elif "Tasarruf" in chart_type:
-    # Yan yana barlar oluşturmak için x koordinatlarını ayarlıyoruz
     x = pd.Series(yillar)
-    width = 0.25
+    width = 0.2
     ax.bar(x - width, [v['yillik_tasarruf'] for v in s1['veriler']], width, label="Senaryo 1", color=COLORS['s1'])
     ax.bar(x, [v['yillik_tasarruf'] for v in s2['veriler']], width, label="Senaryo 2", color=COLORS['s2'])
     ax.bar(x + width, [v['yillik_tasarruf'] for v in s3['veriler']], width, label="Senaryo 3", color=COLORS['s3'])
-    ax.set_title("Mevcut Duruma Kıyasla Sağlanan Yıllık Net İşletme Tasarrufu", fontsize=12, fontweight='bold', pad=15)
-    ax.set_ylabel("Yıllık Tasarruf Girdisi (₺)")
+    ax.set_title("Mevcut Duruma Kıyasla Sağlanan Yıllık Net İşletme Tasarrufu")
+    ax.set_ylabel("Yıllık Tasarruf (₺)")
 
 elif "Giderleri" in chart_type:
-    ax.plot(yillar, [v['mevcut_gider'] for v in s1['veriler']], label="Mevcut Durum (Yakıtlı)", color=COLORS['current'], linewidth=2.5, linestyle=':')
-    ax.plot(yillar, [v['senaryo_gider'] for v in s1['veriler']], label="Senaryo 1 Gideri", color=COLORS['s1'], linewidth=2)
-    ax.plot(yillar, [v['senaryo_gider'] for v in s2['veriler']], label="Senaryo 2 Gideri", color=COLORS['s2'], linewidth=2)
-    ax.plot(yillar, [v['senaryo_gider'] for v in s3['veriler']], label="Senaryo 3 Gideri", color=COLORS['s3'], linewidth=2)
-    ax.set_title("Yıllık Toplam İşletme Maliyeti Karşılaştırmaları (TÜFE Etkili)", fontsize=12, fontweight='bold', pad=15)
-    ax.set_ylabel("Yıllık Toplam Harcama (₺)")
-
-# Ortak Eksene ve Tasarıma Ait Ayarlar
-ax.set_xlabel("Analiz Yılları")
-ax.set_xticks(yillar)
-ax.grid(True)
-ax.legend(loc="upper left", facecolor=COLORS['card'], edgecolor=COLORS['border'])
-plt.tight_layout()
-
-# Grafiği Streamlit ekranına kurşungeçirmez bir şekilde basıyoruz
-st.pyplot(fig)
-
-
-# ─── DETAYLI PROJEKSİYON TABLOSU ──────────────────────────────────────────────
-st.markdown("### 📋 Yıllık Detay Projeksiyon Verileri")
-detay_rows = []
-for idx, yil in enumerate(yillar):
-    detay_rows.append({
-        "Yıl": f"{yil}. Yıl",
-        "Mevcut Gider": fmt_k(s1['veriler'][idx]['mevcut_gider']),
-        "S1 Kümülatif Kâr": fmt_k(s1['veriler'][idx]['kumulatif_kar']),
-        "S2 Kümülatif Kâr": fmt_k(s2['veriler'][idx]['kumulatif_kar']),
-        "S3 Kümülatif Kâr": fmt_k(s3['veriler'][idx]['kumulatif_kar']),
-    })
-st.dataframe(pd.DataFrame(detay_rows).set_index("Yıl"), use_container_width=True)
+    ax.plot(yillar, [v['mevcut_gider'] for v in s1['veriler']], label="Mevcut Durum (Yakıtlı)", color=COLORS['current'], linewidth=2, linestyle=':')
+    ax.plot(yillar, [v['senaryo_gider'] for v in s1['veriler']], label="Senaryo 1 Gideri", color=COLORS['s1'], linewidth=1.5)
+    ax.plot(yillar, [v['senaryo_gider'] for v in s2['veriler']], label="Senaryo 2 Gideri", color=COLORS['s2'], linewidth=1.5)
+    ax.plot(yillar
