@@ -12,48 +12,19 @@ COLORS = {
     "border": "#1e3a5f",
     "accent": "#00d4ff",
     "accent2": "#00ff9d",
-    "muted": "#64748b",
     "s1": "#38bdf8",     
     "s2": "#a78bfa",     
     "s3": "#34d399",     
     "current": "#fb923c" 
 }
 
+# Sabit CSS Tasarımı
 st.markdown(f"""
     <style>
-    .stApp {{ background-color: {COLORS['bg']}; color: {COLORS['text'] if 'text' in COLORS else '#e2e8f0'}; }}
+    .stApp {{ background-color: {COLORS['bg']}; color: #e2e8f0; }}
     div[data-testid="stMetricValue"] > div {{ color: {COLORS['accent']}; font-family: 'Space Mono', monospace; }}
-    .stButton>button {{
-        background: linear-gradient(135deg, {COLORS['accent']}, #0099bb);
-        color: #000000 !important; font-weight: 700; border: none; border-radius: 8px;
-    }}
-    .stButton>button:hover {{ opacity: 0.9; }}
     </style>
 """, unsafe_allow_html=True)
-
-# ─── 1. KRİTİK ADIM: SESSION STATE İLK DEĞER ATAMALARI (MUTLAK GÜVENCE) ──────
-if "step" not in st.session_state:
-    st.session_state.step = 0
-
-# Tüm girdileri önceden başlatıyoruz ki motor ilk saniyede çökmesin
-defaults = {
-    "arac_sayisi": 30, 
-    "analiz_yili": 8, 
-    "tufe": 35.0,
-    "yakit_arac_birim_maliyet": 1200000, 
-    "aylik_yakit_gideri": 8000, 
-    "aylik_bakim_gideri": 2500,
-    "elektrik_arac_birim_maliyet": 2200000, 
-    "aylik_elektrik_gideri": 3200, 
-    "aylik_elektrik_bakim_gideri": 1200,
-    "altyapi_s1": 500000, 
-    "altyapi_s2": 900000, 
-    "altyapi_s3": 1500000
-}
-
-for key, val in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = val
 
 # ─── YARDIMCI FONKSİYONLAR ────────────────────────────────────────────────────
 def fmt_k(n):
@@ -63,190 +34,153 @@ def fmt_k(n):
         return f"{n / 1_000:.0f}K ₺"
     return f"{n:,.0f} ₺".replace(",", ".")
 
-# Sabit Üst Başlık
+# ─── SABİT ÜST BAŞLIK ─────────────────────────────────────────────────────────
 st.markdown(f"""
     <div style="text-align: center; padding: 10px; border-bottom: 1px solid {COLORS['border']}; margin-bottom: 25px;">
         <div style="font-size: 13px; color: {COLORS['accent']}; letter-spacing: 0.25em; font-weight: bold;">⚡ ELEKTRİKLİ ARAÇ GEÇİŞ ANALİZİ</div>
         <h2 style="margin: 5px 0; font-weight: 800; color: {COLORS['accent']};">Filo Dönüşümü Karar Destek Sistemi</h2>
+        <p style="color: #64748b; font-size: 13px; margin: 0;">Parametreleri sol panelden değiştirdiğinizde grafikler anlık güncellenir.</p>
     </div>
 """, unsafe_allow_html=True)
 
-# ─── YAN PANEL: ADIM GÖSTERGESİ ─────────────────────────────────────────────
-steps = [
-    "🚗 0. Filo & Analiz",
-    "⛽ 1. Mevcut Durum",
-    "⚡ 2. Elektrikli Araç",
-    "🏗️ 3. Yatırım & Altyapı",
-    "📊 4. Sonuçlar"
-]
-st.sidebar.markdown(f"<h3 style='color: {COLORS['accent']};'>Adımlar</h3>", unsafe_allow_html=True)
-for idx, name in enumerate(steps):
-    if idx == st.session_state.step:
-        st.sidebar.markdown(f"**<span style='color: {COLORS['accent']};'>{name} 📍</span>**", unsafe_allow_html=True)
-    elif idx < st.session_state.step:
-        st.sidebar.markdown(f"<span style='color: {COLORS['accent2']};'>{name} ✓</span>", unsafe_allow_html=True)
-    else:
-        st.sidebar.markdown(f"<span style='color: {COLORS['muted']};'>{name}</span>", unsafe_allow_html=True)
+# ─── GÜVENLİ GİRDİ PANELİ (SIDEBAR) ──────────────────────────────────────────
+st.sidebar.markdown(f"<h3 style='color: {COLORS['accent']};'>📋 Analiz Parametreleri</h3>", unsafe_allow_html=True)
 
-st.sidebar.markdown("---")
+# 1. Genel Ayarlar
+st.sidebar.subheader("🚗 Genel Filo Ayarları")
+arac_sayisi = st.sidebar.number_input("Toplam Araç Sayısı", min_value=1, value=30, step=1)
+analiz_yili = st.sidebar.number_input("Analiz Süresi (Yıl)", min_value=3, max_value=20, value=8, step=1)
+tufe = st.sidebar.number_input("Yıllık TÜFE Oranı (%)", min_value=0.0, value=35.0, step=0.5)
 
-# ─── ADIM İÇERİKLERİ ─────────────────────────────────────────────────────────
-if st.session_state.step == 0:
-    st.subheader("🚗 Filo ve Analiz Parametreleri")
-    st.session_state.arac_sayisi = st.number_input("Toplam Araç Sayısı (adet)", min_value=1, max_value=10000, value=int(st.session_state.arac_sayisi), key="inp_arac")
-    st.session_state.analiz_yili = st.number_input("Analiz Süresi (Yıl)", min_value=3, max_value=20, value=int(st.session_state.analiz_yili), key="inp_yil")
-    st.session_state.tufe = st.number_input("Yıllık TÜFE Oranı (%)", min_value=1.0, max_value=200.0, value=float(st.session_state.tufe), step=0.5, key="inp_tufe")
+# 2. Yakıtlı Araç Ayarları
+st.sidebar.subheader("⛽ Yakıtlı Araç Giderleri")
+yakit_arac_birim_maliyet = st.sidebar.number_input("Araç Alış Fiyatı (₺)", min_value=0, value=1200000, step=50000)
+aylik_yakit_gideri = st.sidebar.number_input("Aylık Yakıt (Araç Başı ₺)", min_value=0, value=8000, step=500)
+aylik_bakim_gideri = st.sidebar.number_input("Aylık Bakım (Araç Başı ₺)", min_value=0, value=2500, step=200)
 
-elif st.session_state.step == 1:
-    st.subheader("⛽ Mevcut Durum – Yakıtlı Araç Maliyetleri")
-    st.session_state.yakit_arac_birim_maliyet = st.number_input("Yakıtlı Araç Alış Fiyatı (₺)", min_value=0, value=int(st.session_state.yakit_arac_birim_maliyet), step=10000, key="inp_y_fiyat")
-    st.session_state.aylik_yakit_gideri = st.number_input("Aylık Yakıt Gideri (Araç Başı ₺)", min_value=0, value=int(st.session_state.aylik_yakit_gideri), step=100, key="inp_y_yakit")
-    st.session_state.aylik_bakim_gideri = st.number_input("Aylık Bakım Gideri (Araç Başı ₺)", min_value=0, value=int(st.session_state.aylik_bakim_gideri), step=100, key="inp_y_bakim")
+# 3. Elektrikli Araç Ayarları
+st.sidebar.subheader("⚡ Elektrikli Araç Giderleri")
+elektrik_arac_birim_maliyet = st.sidebar.number_input("Elektrikli Araç Fiyatı (₺)", min_value=0, value=2200000, step=50000)
+aylik_elektrik_gideri = st.sidebar.number_input("Aylık Şarj (Araç Başı ₺)", min_value=0, value=3200, step=200)
+aylik_elektrik_bakim_gideri = st.sidebar.number_input("Aylık Bakım (Araç Başı ₺)", min_value=0, value=1200, step=100)
 
-elif st.session_state.step == 2:
-    st.subheader("⚡ Elektrikli Araç Maliyetleri")
-    st.session_state.elektrik_arac_birim_maliyet = st.number_input("Elektrikli Araç Alış Fiyatı (₺)", min_value=0, value=int(st.session_state.elektrik_arac_birim_maliyet), step=10000, key="inp_e_fiyat")
-    st.session_state.aylik_elektrik_gideri = st.number_input("Aylık Elektrik (Şarj) Gideri (Araç Başı ₺)", min_value=0, value=int(st.session_state.aylik_elektrik_gideri), step=100, key="inp_e_sarj")
-    st.session_state.aylik_elektrik_bakim_gideri = st.number_input("Aylık Bakım Gideri – Elektrikli (Araç Başı ₺)", min_value=0, value=int(st.session_state.aylik_elektrik_bakim_gideri), step=100, key="inp_e_bakim")
+# 4. Altyapı Ayarları
+st.sidebar.subheader("🏗️ Altyapı Yatırımları (₺)")
+altyapi_s1 = st.sidebar.number_input("Senaryo 1 (1/3 Geçiş) Altyapı", min_value=0, value=500000, step=50000)
+altyapi_s2 = st.sidebar.number_input("Senaryo 2 (2/3 Geçiş) Altyapı", min_value=0, value=900000, step=50000)
+altyapi_s3 = st.sidebar.number_input("Senaryo 3 (Tam Geçiş) Altyapı", min_value=0, value=1500000, step=50000)
 
-elif st.session_state.step == 3:
-    st.subheader("🏗️ Senaryo Bazlı Altyapı Yatırımı")
-    a_sayisi = st.session_state.arac_sayisi
-    st.session_state.altyapi_s1 = st.number_input(f"Altyapı Yatırımı – Senaryo 1 ({round(a_sayisi/3)} araç için ₺)", min_value=0, value=int(st.session_state.altyapi_s1), step=50000, key="inp_alt_s1")
-    st.session_state.altyapi_s2 = st.number_input(f"Altyapı Yatırımı – Senaryo 2 ({round(a_sayisi*2/3)} araç için ₺)", min_value=0, value=int(st.session_state.altyapi_s2), step=50000, key="inp_alt_s2")
-    st.session_state.altyapi_s3 = st.number_input(f"Altyapı Yatırımı – Senaryo 3 ({a_sayisi} araç için ₺)", min_value=0, value=int(st.session_state.altyapi_s3), step=50000, key="inp_alt_s3")
 
-# ─── HESAPLAMA MOTORU ─────────────────────────────────────────────────────────
-def dinamik_analiz_motoru():
-    p = st.session_state
-    yillar = list(range(1, int(p.analiz_yili) + 1))
-    enflasyon = float(p.tufe) / 100.0
+# ─── HESAPLAMA MOTORU (SABİT VERİ MODELİ) ─────────────────────────────────────
+yillar = list(range(1, int(analiz_yili) + 1))
+enflasyon = float(tufe) / 100.0
 
-    def senaryo_hesapla(elektrik_orani, altyapi_yatirimi):
-        e_arac = round(int(p.arac_sayisi) * elektrik_orani)
-        y_arac = int(p.arac_sayisi) - e_arac
-        arac_yatirim = e_arac * (int(p.elektrik_arac_birim_maliyet) - int(p.yakit_arac_birim_maliyet))
-        toplam_ilk_yatirim = max(0, arac_yatirim) + int(altyapi_yatirimi)
+def senaryo_hesapla(elektrik_orani, altyapi_yatirimi):
+    e_arac = round(int(arac_sayisi) * elektrik_orani)
+    y_arac = int(arac_sayisi) - e_arac
+    arac_yatirim = e_arac * (int(elektrik_arac_birim_maliyet) - int(yakit_arac_birim_maliyet))
+    toplam_ilk_yatirim = max(0, arac_yatirim) + int(altyapi_yatirimi)
 
-        kumulatif_kar = -toplam_ilk_yatirim
-        bas_bas = None
-        veriler = []
+    kumulatif_kar = -toplam_ilk_yatirim
+    bas_bas = None
+    veriler = []
 
-        for yil in yillar:
-            bf = (1 + enflasyon) ** (yil - 1)
-            mevcut_gider = int(p.arac_sayisi) * 12 * ((int(p.aylik_yakit_gideri) + int(p.aylik_bakim_gideri)) * bf)
-            e_gider = e_arac * 12 * ((int(p.aylik_elektrik_gideri) + int(p.aylik_elektrik_bakim_gideri)) * bf)
-            y_gider = y_arac * 12 * ((int(p.aylik_yakit_gideri) + int(p.aylik_bakim_gideri)) * bf)
-            senaryo_gider = e_gider + y_gider
+    for yil in yillar:
+        bf = (1 + enflasyon) ** (yil - 1)
+        mevcut_gider = int(arac_sayisi) * 12 * ((int(aylik_yakit_gideri) + int(aylik_bakim_gideri)) * bf)
+        e_gider = e_arac * 12 * ((int(aylik_elektrik_gideri) + int(aylik_elektrik_bakim_gideri)) * bf)
+        y_gider = y_arac * 12 * ((int(aylik_yakit_gideri) + int(aylik_bakim_gideri)) * bf)
+        senaryo_gider = e_gider + y_gider
 
-            yillik_tasarruf = mevcut_gider - senaryo_gider
-            kumulatif_kar += yillik_tasarruf
+        yillik_tasarruf = mevcut_gider - senaryo_gider
+        kumulatif_kar += yillik_tasarruf
 
-            if bas_bas is None and kumulatif_kar >= 0:
-                bas_bas = yil
+        if bas_bas is None and kumulatif_kar >= 0:
+            bas_bas = yil
 
-            veriler.append({
-                "yil": yil, "kumulatif_kar": kumulatif_kar, "yillik_tasarruf": yillik_tasarruf,
-                "mevcut_gider": mevcut_gider, "senaryo_gider": senaryo_gider
-            })
-        return {"veriler": veriler, "bas_bas": bas_bas, "toplam_ilk_yatirim": toplam_ilk_yatirim, "e_arac": e_arac}
-
-    return senaryo_hesapla(1/3, p.altyapi_s1), senaryo_hesapla(2/3, p.altyapi_s2), senaryo_hesapla(1.0, p.altyapi_s3), yillar
-
-# ─── ADIM 4: SONUÇLAR ────────────────────────────────────────────────────────
-if st.session_state.step == 4:
-    s1, s2, s3, yillar = dinamik_analiz_motoru()
-    
-    st.subheader("🎯 Başabaş Noktası Özeti")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1: st.metric("Senaryo 1 (1/3 Elektrik)", f"{s1['bas_bas']} Yıl" if s1['bas_bas'] else "Amorti Edilemiyor")
-    with col2: st.metric("Senaryo 2 (2/3 Elektrik)", f"{s2['bas_bas']} Yıl" if s2['bas_bas'] else "Amorti Edilemiyor")
-    with col3: st.metric("Senaryo 3 (Tam Elektrik)", f"{s3['bas_bas']} Yıl" if s3['bas_bas'] else "Amorti Edilemiyor")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    son_yil_idx = int(st.session_state.analiz_yili) - 1
-    ozet_df = pd.DataFrame({
-        "Dönüştürülen Araç": [f"{s1['e_arac']} araç", f"{s2['e_arac']} araç", f"{s3['e_arac']} araç"],
-        "İlk Yatırım Maliyeti": [fmt_k(s1['toplam_ilk_yatirim']), fmt_k(s2['toplam_ilk_yatirim']), fmt_k(s3['toplam_ilk_yatirim'])],
-        f"{st.session_state.analiz_yili}. Yıl Kümülatif Kâr": [fmt_k(s1['veriler'][son_yil_idx]['kumulatif_kar']), fmt_k(s2['veriler'][son_yil_idx]['kumulatif_kar']), fmt_k(s3['veriler'][son_yil_idx]['kumulatif_kar'])]
-    }, index=["Senaryo 1 (1/3)", "Senaryo 2 (2/3)", "Senaryo 3 (Tam)"])
-    
-    st.dataframe(ozet_df, use_container_width=True, key="df_ozet_tablo")
-
-    st.markdown("---")
-    
-    chart_type = st.radio(
-        "Grafik Görünümü Seçin:",
-        ["📈 Başabaş Analizi", "📊 Yıllık Tasarruf", "💰 Yıllık İşletme Gideri"],
-        horizontal=True,
-        key="chart_selector"
-    )
-
-    chart_layout = dict(
-        paper_bgcolor=COLORS["card"], plot_bgcolor=COLORS["surface"],
-        font=dict(color="#e2e8f0"),
-        xaxis=dict(gridcolor=f"{COLORS['border']}44", title="Yıllar"),
-        yaxis=dict(gridcolor=f"{COLORS['border']}44"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-
-    if "Başabaş" in chart_type:
-        fig = fgo.Figure()
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['kumulatif_kar'] for v in s1['veriler']], name="Senaryo 1 (1/3)", line=dict(color=COLORS['s1'], width=3)))
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['kumulatif_kar'] for v in s2['veriler']], name="Senaryo 2 (2/3)", line=dict(color=COLORS['s2'], width=3)))
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['kumulatif_kar'] for v in s3['veriler']], name="Senaryo 3 (Tam)", line=dict(color=COLORS['s3'], width=3)))
-        fig.add_shape(type="line", x0=1, y0=0, x1=max(yillar), y1=0, line=dict(color=COLORS['current'], width=2, dash="dash"))
-        fig.update_layout(title="Kümülatif Kâr / Zarar Projeksiyonu", **chart_layout)
-        st.plotly_chart(fig, use_container_width=True, key="plotly_breakeven")
-
-    elif "Tasarruf" in chart_type:
-        fig = fgo.Figure()
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['yillik_tasarruf'] for v in s1['veriler']], name="S1 Tasarruf", line=dict(color=COLORS['s1'])))
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['yillik_tasarruf'] for v in s2['veriler']], name="S2 Tasarruf", line=dict(color=COLORS['s2'])))
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['yillik_tasarruf'] for v in s3['veriler']], name="S3 Tasarruf", line=dict(color=COLORS['s3'])))
-        fig.update_layout(title="Net Yıllık İşletme Tasarrufu", **chart_layout)
-        st.plotly_chart(fig, use_container_width=True, key="plotly_savings")
-
-    elif "Gideri" in chart_type:
-        fig = fgo.Figure()
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['mevcut_gider'] for v in s1['veriler']], name="Mevcut Gider", line=dict(color=COLORS['current'], width=3, dash="dot")))
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['senaryo_gider'] for v in s1['veriler']], name="Senaryo 1 Gider", line=dict(color=COLORS['s1'])))
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['senaryo_gider'] for v in s2['veriler']], name="Senaryo 2 Gider", line=dict(color=COLORS['s2'])))
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['senaryo_gider'] for v in s3['veriler']], name="Senaryo 3 Gider", line=dict(color=COLORS['s3'])))
-        fig.update_layout(title="Yıllık Toplam İşletme Maliyetleri Karşılaştırması", **chart_layout)
-        st.plotly_chart(fig, use_container_width=True, key="plotly_opex")
-
-    st.markdown("### 📋 Yıllık Detay Tablosu")
-    detay_rows = []
-    for idx, yil in enumerate(yillar):
-        detay_rows.append({
-            "Yıl": f"{yil}. Yıl",
-            "Mevcut Gider": fmt_k(s1['veriler'][idx]['mevcut_gider']),
-            "S1 Kümülatif Kâr": fmt_k(s1['veriler'][idx]['kumulatif_kar']),
-            "S2 Kümülatif Kâr": fmt_k(s2['veriler'][idx]['kumulatif_kar']),
-            "S3 Kümülatif Kâr": fmt_k(s3['veriler'][idx]['kumulatif_kar']),
+        veriler.append({
+            "yil": yil, "kumulatif_kar": kumulatif_kar, "yillik_tasarruf": yillik_tasarruf,
+            "mevcut_gider": mevcut_gider, "senaryo_gider": senaryo_gider
         })
-    st.dataframe(pd.DataFrame(detay_rows).set_index("Yıl"), use_container_width=True, key="df_detay_tablo")
+    return {"veriler": veriler, "bas_bas": bas_bas, "toplam_ilk_yatirim": toplam_ilk_yatirim, "e_arac": e_arac}
 
-# ─── NAVİGASYON BUTONLARI ─────────────────────────────────────────────────────
+# Senaryoları çalıştır
+s1 = senaryo_hesapla(1/3, altyapi_s1)
+s2 = senaryo_hesapla(2/3, altyapi_s2)
+s3 = senaryo_hesapla(1.0, altyapi_s3)
+
+
+# ─── SAĞ PANELİ ÇİZME (ANA EKRAN) ─────────────────────────────────────────────
+st.subheader("🎯 Başabaş Noktası Özeti")
+col1, col2, col3 = st.columns(3)
+with col1: st.metric("Senaryo 1 (1/3 Elektrik)", f"{s1['bas_bas']} Yıl" if s1['bas_bas'] else "Amorti Edilemiyor")
+with col2: st.metric("Senaryo 2 (2/3 Elektrik)", f"{s2['bas_bas']} Yıl" if s2['bas_bas'] else "Amorti Edilemiyor")
+with col3: st.metric("Senaryo 3 (Tam Elektrik)", f"{s3['bas_bas']} Yıl" if s3['bas_bas'] else "Amorti Edilemiyor")
+
 st.markdown("<br>", unsafe_allow_html=True)
-c_back, c_space, c_next = st.columns([1, 4, 1])
 
-with c_back:
-    if st.session_state.step > 0:
-        if st.button("← Geri", key="btn_back"):
-            st.session_state.step -= 1
-            st.rerun()
+# Özet Tablo
+son_yil_idx = int(analiz_yili) - 1
+ozet_df = pd.DataFrame({
+    "Dönüştürülen Araç": [f"{s1['e_arac']} araç", f"{s2['e_arac']} araç", f"{s3['e_arac']} araç"],
+    "İlk Yatırım Maliyeti": [fmt_k(s1['toplam_ilk_yatirim']), fmt_k(s2['toplam_ilk_yatirim']), fmt_k(s3['toplam_ilk_yatirim'])],
+    f"{analiz_yili}. Yıl Kümülatif Kâr": [fmt_k(s1['veriler'][son_yil_idx]['kumulatif_kar']), fmt_k(s2['veriler'][son_yil_idx]['kumulatif_kar']), fmt_k(s3['veriler'][son_yil_idx]['kumulatif_kar'])]
+}, index=["Senaryo 1 (1/3 Geçiş)", "Senaryo 2 (2/3 Geçiş)", "Senaryo 3 (Tam Geçiş)"])
 
-with c_next:
-    if st.session_state.step < 4:
-        btn_label = "📊 Sonuçları Gör" if st.session_state.step == 3 else "İleri →"
-        if st.button(btn_label, key="btn_next"):
-            st.session_state.step += 1
-            st.rerun()
-    else:
-        if st.button("🔄 Baştan Başla", key="btn_reset"):
-            st.session_state.step = 0
-            st.rerun()
+st.dataframe(ozet_df, use_container_width=True)
+
+st.markdown("---")
+
+# Grafik Seçici (Dinamik)
+chart_type = st.radio(
+    "Grafik Görünümü Seçin:",
+    ["📈 Başabaş Analizi (Kümülatif)", "📊 Yıllık Net Tasarruf", "💰 Toplam İşletme Giderleri"],
+    horizontal=True
+)
+
+chart_layout = dict(
+    paper_bgcolor=COLORS["card"], plot_bgcolor=COLORS["surface"],
+    font=dict(color="#e2e8f0"),
+    xaxis=dict(gridcolor=f"{COLORS['border']}44", title="Yıllar", tickmode="linear"),
+    yaxis=dict(gridcolor=f"{COLORS['border']}44"),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+)
+
+if "Başabaş" in chart_type:
+    fig = fgo.Figure()
+    fig.add_trace(fgo.Scatter(x=yillar, y=[v['kumulatif_kar'] for v in s1['veriler']], name="Senaryo 1 (1/3)", line=dict(color=COLORS['s1'], width=3)))
+    fig.add_trace(fgo.Scatter(x=yillar, y=[v['kumulatif_kar'] for v in s2['veriler']], name="Senaryo 2 (2/3)", line=dict(color=COLORS['s2'], width=3)))
+    fig.add_trace(fgo.Scatter(x=yillar, y=[v['kumulatif_kar'] for v in s3['veriler']], name="Senaryo 3 (Tam)", line=dict(color=COLORS['s3'], width=3)))
+    fig.add_shape(type="line", x0=1, y0=0, x1=max(yillar), y1=0, line=dict(color=COLORS['current'], width=2, dash="dash"))
+    fig.update_layout(title="Yıllara Göre Kümülatif Kâr / Zarar Seyri (Sıfır Çizgisi = Amortisman)", **chart_layout)
+    st.plotly_chart(fig, use_container_width=True)
+
+elif "Tasarruf" in chart_type:
+    fig = fgo.Figure()
+    fig.add_trace(fgo.Bar(x=yillar, y=[v['yillik_tasarruf'] for v in s1['veriler']], name="Senaryo 1", marker_color=COLORS['s1']))
+    fig.add_trace(fgo.Bar(x=yillar, y=[v['yillik_tasarruf'] for v in s2['veriler']], name="Senaryo 2", marker_color=COLORS['s2']))
+    fig.add_trace(fgo.Bar(x=yillar, y=[v['yillik_tasarruf'] for v in s3['veriler']], name="Senaryo 3", marker_color=COLORS['s3']))
+    fig.update_layout(title="Mevcut Duruma Kıyasla Sağlanan Yıllık Net İşletme Tasarrufu", bmode='group', **chart_layout)
+    st.plotly_chart(fig, use_container_width=True)
+
+elif "Giderleri" in chart_type:
+    fig = fgo.Figure()
+    fig.add_trace(fgo.Scatter(x=yillar, y=[v['mevcut_gider'] for v in s1['veriler']], name="Mevcut Durum (Yakıtlı)", line=dict(color=COLORS['current'], width=3, dash="dot")))
+    fig.add_trace(fgo.Scatter(x=yillar, y=[v['senaryo_gider'] for v in s1['veriler']], name="Senaryo 1 Gideri", line=dict(color=COLORS['s1'])))
+    fig.add_trace(fgo.Scatter(x=yillar, y=[v['senaryo_gider'] for v in s2['veriler']], name="Senaryo 2 Gideri", line=dict(color=COLORS['s2'])))
+    fig.add_trace(fgo.Scatter(x=yillar, y=[v['senaryo_gider'] for v in s3['veriler']], name="Senaryo 3 Gideri", line=dict(color=COLORS['s3'])))
+    fig.update_layout(title="Yıllık Toplam İşletme Maliyeti Karşılaştırmaları (TÜFE Etkili)", **chart_layout)
+    st.plotly_chart(fig, use_container_width=True)
+
+# Yıllık Detay Tablosu
+st.markdown("### 📋 Yıllık Detay Projeksiyon Verileri")
+detay_rows = []
+for idx, yil in enumerate(yillar):
+    detay_rows.append({
+        "Yıl": f"{yil}. Yıl",
+        "Mevcut Gider": fmt_k(s1['veriler'][idx]['mevcut_gider']),
+        "S1 Kümülatif Kâr": fmt_k(s1['veriler'][idx]['kumulatif_kar']),
+        "S2 Kümülatif Kâr": fmt_k(s2['veriler'][idx]['kumulatif_kar']),
+        "S3 Kümülatif Kâr": fmt_k(s3['veriler'][idx]['kumulatif_kar']),
+    })
+st.dataframe(pd.DataFrame(detay_rows).set_index("Yıl"), use_container_width=True)
