@@ -1,144 +1,651 @@
+# ============================================================
+#  ELEKTRİKLİ ARACA GEÇİŞ KARAR DESTEK SİSTEMİ
+#  Streamlit Versiyonu
+#  Çalıştırmak için: streamlit run elektrikli_arac_streamlit.py
+# ============================================================
+
+# pip install streamlit requests matplotlib numpy pandas
+
 import streamlit as st
+import requests
+import re
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import matplotlib.patches as mpatches
+import warnings
+warnings.filterwarnings("ignore")
 
-# ─── SAYFA AYARLARI (HAM HTML / CSS TAMAMEN KALDIRILDI) ────────────────────────
-st.set_page_config(page_title="Filo Dönüşümü Karar Destek Sistemi", layout="wide")
-
-# Matplotlib için standart renk paleti tanımları
-COLORS = {
-    "s1": "#38bdf8",     # Senaryo 1 - Mavi
-    "s2": "#a78bfa",     # Senaryo 2 - Mor
-    "s3": "#34d399",     # Senaryo 3 - Yeşil
-    "current": "#fb923c" # Mevcut Durum - Turuncu
-}
-
-# ─── YARDIMCI FONKSİYONLAR ────────────────────────────────────────────────────
-def fmt_k(n):
-    if abs(n) >= 1_000_000:
-        return f"{n / 1_000_000:.1f}M ₺"
-    if abs(n) >= 1_000:
-        return f"{n / 1_000:.0f}K ₺"
-    return f"{n:,.0f} ₺".replace(",", ".")
-
-# ─── GÜVENLİ YERLEŞİK ÜST BAŞLIK ──────────────────────────────────────────────
-st.caption("⚡ ELEKTRİKLİ ARAÇ GEÇİŞ ANALİZİ")
-st.title("Filo Dönüşümü Karar Destek Sistemi")
-st.write("Sol panelden girilen verilere göre analiz sonuçları anlık hesaplanır.")
-st.divider()
-
-# ─── GÜVENLİ GİRDİ PANELİ (SIDEBAR) ──────────────────────────────────────────
-st.sidebar.title("📋 Analiz Parametreleri")
-
-# 1. Genel Ayarlar
-st.sidebar.header("🚗 Genel Filo Ayarları")
-arac_sayisi = st.sidebar.number_input("Toplam Araç Sayısı", min_value=1, value=30, step=1)
-analiz_yili = st.sidebar.number_input("Analiz Süresi (Yıl)", min_value=3, max_value=20, value=8, step=1)
-tufe = st.sidebar.number_input("Yıllık TÜFE Oranı (%)", min_value=0.0, value=35.0, step=0.5)
-
-# 2. Yakıtlı Araç Ayarları
-st.sidebar.header("⛽ Yakıtlı Araç Giderleri")
-yakit_arac_birim_maliyet = st.sidebar.number_input("Araç Alış Fiyatı (₺)", min_value=0, value=1200000, step=50000)
-aylik_yakit_gideri = st.sidebar.number_input("Aylık Yakıt (Araç Başı ₺)", min_value=0, value=8000, step=500)
-aylik_bakim_gideri = st.sidebar.number_input("Aylık Bakım (Araç Başı ₺)", min_value=0, value=2500, step=200)
-
-# 3. Elektrikli Araç Ayarları
-st.sidebar.header("⚡ Elektrikli Araç Giderleri")
-elektrik_arac_birim_maliyet = st.sidebar.number_input("Elektrikli Araç Fiyatı (₺)", min_value=0, value=2200000, step=50000)
-aylik_elektrik_gideri = st.sidebar.number_input("Aylık Şarj (Araç Başı ₺)", min_value=0, value=3200, step=200)
-aylik_elektrik_bakim_gideri = st.sidebar.number_input("Aylık Bakım (Araç Başı ₺)", min_value=0, value=1200, step=100)
-
-# 4. Altyapı Ayarları
-st.sidebar.header("🏗️ Altyapı Yatırımları (₺)")
-altyapi_s1 = st.sidebar.number_input("Senaryo 1 (1/3 Geçiş) Altyapı", min_value=0, value=500000, step=50000)
-altyapi_s2 = st.sidebar.number_input("Senaryo 2 (2/3 Geçiş) Altyapı", min_value=0, value=900000, step=50000)
-altyapi_s3 = st.sidebar.number_input("Senaryo 3 (Tam Geçiş) Altyapı", min_value=0, value=1500000, step=50000)
-
-# ─── HESAPLAMA MOTORU ─────────────────────────────────────────────────────────
-yillar = list(range(1, int(analiz_yili) + 1))
-enflasyon = float(tufe) / 100.0
-
-def senaryo_hesapla(elektrik_orani, altyapi_yatirimi):
-    e_arac = round(int(arac_sayisi) * elektrik_orani)
-    y_arac = int(arac_sayisi) - e_arac
-    arac_yatirim = e_arac * (int(elektrik_arac_birim_maliyet) - int(yakit_arac_birim_maliyet))
-    toplam_ilk_yatirim = max(0, arac_yatirim) + int(altyapi_yatirimi)
-
-    kumulatif_kar = -toplam_ilk_yatirim
-    bas_bas = None
-    veriler = []
-
-    for yil in yillar:
-        bf = (1 + enflasyon) ** (yil - 1)
-        mevcut_gider = int(arac_sayisi) * 12 * ((int(aylik_yakit_gideri) + int(aylik_bakim_gideri)) * bf)
-        e_gider = e_arac * 12 * ((int(aylik_elektrik_gideri) + int(aylik_elektrik_bakim_gideri)) * bf)
-        y_gider = y_arac * 12 * ((int(aylik_yakit_gideri) + int(aylik_bakim_gideri)) * bf)
-        senaryo_gider = e_gider + y_gider
-
-        yillik_tasarruf = mevcut_gider - senaryo_gider
-        kumulatif_kar += yillik_tasarruf
-
-        if bas_bas is None and kumulatif_kar >= 0:
-            bas_bas = yil
-
-        veriler.append({
-            "yil": yil, "kumulatif_kar": kumulatif_kar, "yillik_tasarruf": yillik_tasarruf,
-            "mevcut_gider": mevcut_gider, "senaryo_gider": senaryo_gider
-        })
-    return {"veriler": veriler, "bas_bas": bas_bas, "toplam_ilk_yatirim": toplam_ilk_yatirim, "e_arac": e_arac}
-
-# Hesaplamaları çalıştır
-s1 = senaryo_hesapla(1/3, altyapi_s1)
-s2 = senaryo_hesapla(2/3, altyapi_s2)
-s3 = senaryo_hesapla(1.0, altyapi_s3)
-
-# ─── ANA EKRAN ÇIKTILARI ──────────────────────────────────────────────────────
-st.subheader("🎯 Başabaş Noktası Özeti")
-col1, col2, col3 = st.columns(3)
-with col1: st.metric("Senaryo 1 (1/3 Elektrik)", f"{s1['bas_bas']} Yıl" if s1['bas_bas'] else "Amorti Edilemiyor")
-with col2: st.metric("Senaryo 2 (2/3 Elektrik)", f"{s2['bas_bas']} Yıl" if s2['bas_bas'] else "Amorti Edilemiyor")
-with col3: st.metric("Senaryo 3 (Tam Elektrik)", f"{s3['bas_bas']} Yıl" if s3['bas_bas'] else "Amorti Edilemiyor")
-
-# Finansal Özet Tablo
-son_yil_idx = int(analiz_yili) - 1
-ozet_df = pd.DataFrame({
-    "Dönüştürülen Araç": [f"{s1['e_arac']} araç", f"{s2['e_arac']} araç", f"{s3['e_arac']} araç"],
-    "İlk Yatırım Maliyeti": [fmt_k(s1['toplam_ilk_yatirim']), fmt_k(s2['toplam_ilk_yatirim']), fmt_k(s3['toplam_ilk_yatirim'])],
-    f"{analiz_yili}. Yıl Kümülatif Kâr": [fmt_k(s1['veriler'][son_yil_idx]['kumulatif_kar']), fmt_k(s2['veriler'][son_yil_idx]['kumulatif_kar']), fmt_k(s3['veriler'][son_yil_idx]['kumulatif_kar'])]
-}, index=["Senaryo 1 (1/3 Geçiş)", "Senaryo 2 (2/3 Geçiş)", "Senaryo 3 (Tam Geçiş)"])
-
-st.dataframe(ozet_df, use_container_width=True)
-st.divider()
-
-# Grafik Tipi Seçimi
-chart_type = st.radio(
-    "Grafik Görünümü Seçin:",
-    ["📈 Başabaş Analizi (Kümülatif)", "📊 Yıllık Net Tasarruf", "💰 Toplam İşletme Giderleri"],
-    horizontal=True
+# ════════════════════════════════════════════════════════════
+#  SAYFA AYARI
+# ════════════════════════════════════════════════════════════
+st.set_page_config(
+    page_title="Elektrikli Araç Geçiş Analizi",
+    page_icon="⚡",
+    layout="wide",
 )
 
-# ─── MATPLOTLIB GÜVENLİ ÇİZİM MOTORU ──────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(10, 4))
+plt.rcParams.update({
+    "font.family": "DejaVu Sans",
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.3,
+    "figure.dpi": 110,
+    "axes.titlesize": 12,
+    "axes.labelsize": 10,
+})
 
-if "Başabaş" in chart_type:
-    ax.plot(yillar, [v['kumulatif_kar'] for v in s1['veriler']], label="Senaryo 1 (1/3)", color=COLORS['s1'], linewidth=2, marker='o')
-    ax.plot(yillar, [v['kumulatif_kar'] for v in s2['veriler']], label="Senaryo 2 (2/3)", color=COLORS['s2'], linewidth=2, marker='s')
-    ax.plot(yillar, [v['kumulatif_kar'] for v in s3['veriler']], label="Senaryo 3 (Tam)", color=COLORS['s3'], linewidth=2, marker='^')
-    ax.axhline(0, color=COLORS['current'], linestyle='--', linewidth=1.2, label="Amortisman Sınırı (0 ₺)")
-    ax.set_title("Yıllara Göre Kümülatif Kâr / Zarar Seyri")
-    ax.set_ylabel("Kümülatif Kazanç (₺)")
+# ════════════════════════════════════════════════════════════
+#  SABİT DEĞERLER
+# ════════════════════════════════════════════════════════════
+EF_DIZEL_YAKIM          = 2.6800
+EF_DIZEL_UPSTREAM       = 0.5640
+EF_ELEKTRIK_TUKETIM     = 0.4190
+EF_ELEKTRIK_UPSTREAM    = 0.0420
 
-elif "Tasarruf" in chart_type:
-    x = pd.Series(yillar)
-    width = 0.2
-    ax.bar(x - width, [v['yillik_tasarruf'] for v in s1['veriler']], width, label="Senaryo 1", color=COLORS['s1'])
-    ax.bar(x, [v['yillik_tasarruf'] for v in s2['veriler']], width, label="Senaryo 2", color=COLORS['s2'])
-    ax.bar(x + width, [v['yillik_tasarruf'] for v in s3['veriler']], width, label="Senaryo 3", color=COLORS['s3'])
-    ax.set_title("Mevcut Duruma Kıyasla Sağlanan Yıllık Net İşletme Tasarrufu")
-    ax.set_ylabel("Yıllık Tasarruf (₺)")
+OTOBÜS_DIZEL_TUKETIM    = 0.35
+MINIBÜS_DIZEL_TUKETIM   = 0.16
+OTOBÜS_ELK_TUKETIM      = 1.10
+MINIBÜS_ELK_TUKETIM     = 0.45
 
-elif "Giderleri" in chart_type:
-    ax.plot(yillar, [v['mevcut_gider'] for v in s1['veriler']], label="Mevcut Durum (Yakıtlı)", color=COLORS['current'], linewidth=2, linestyle=':')
-    ax.plot(yillar, [v['senaryo_gider'] for v in s1['veriler']], label="Senaryo 1 Gideri", color=COLORS['s1'], linewidth=1.5)
-    ax.plot(yillar, [v['senaryo_gider'] for v in s2['veriler']], label="Senaryo 2 Gideri", color=COLORS['s2'], linewidth=1.5)
-    ax.plot(yillar
+RENKLER = {
+    "Mevcut Durum":    "#2D6A9F",
+    "1/3 Elektrikli":  "#27AE60",
+    "2/3 Elektrikli":  "#E67E22",
+    "Tam Elektrikli":  "#C0392B",
+}
+
+MAX_AMORTI_YIL = 30
+
+# ════════════════════════════════════════════════════════════
+#  CANLI FİYAT FONKSİYONLARI
+# ════════════════════════════════════════════════════════════
+@st.cache_data(ttl=3600)
+def fetch_diesel_price():
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get("https://www.epdk.gov.tr/Detay/Icerik/3-0-24-4/akaryakitfiyatlari",
+                         headers=headers, timeout=8)
+        m = re.search(r"motorin[^0-9]*([0-9]+[,\.][0-9]+)", r.text, re.IGNORECASE)
+        if m:
+            return float(m.group(1).replace(",", "."))
+    except:
+        pass
+    return None
+
+@st.cache_data(ttl=3600)
+def fetch_electricity_price():
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get("https://www.epdk.gov.tr/Detay/Icerik/3-0-24-6/elektrik",
+                         headers=headers, timeout=8)
+        m = re.search(r"([0-9]+[,\.][0-9]+)\s*(TL|₺).*?kWh", r.text, re.IGNORECASE)
+        if m:
+            return float(m.group(1).replace(",", "."))
+    except:
+        pass
+    return None
+
+@st.cache_data(ttl=3600)
+def fetch_tufe():
+    try:
+        r = requests.get("https://data.tuik.gov.tr/api/Gosterge?id=5001&dil=1", timeout=8)
+        d = r.json()
+        val = d.get("value") or d.get("Value")
+        if val:
+            return float(val) / 100
+    except:
+        pass
+    return None
+
+def fmt_number(n):
+    try:
+        return f"{float(n):,.0f}".replace(",", ".")
+    except:
+        return str(n)
+
+def format_tl(x, pos=None):
+    return f"{x/1e6:.1f}M ₺" if abs(x) >= 1e6 else f"{x/1e3:.0f}K ₺"
+
+# ════════════════════════════════════════════════════════════
+#  BAŞLIK
+# ════════════════════════════════════════════════════════════
+st.title("⚡ Elektrikli Araca Geçiş Karar Destek Sistemi")
+st.markdown("**Filo Elektrikleştirme Senaryo Analizi** — Mevcut dizel filonuzu elektrikliye dönüştürmenin ekonomik ve çevresel etkilerini dört senaryo üzerinden karşılaştırın.")
+st.divider()
+
+# ════════════════════════════════════════════════════════════
+#  CANLI FİYAT VERİLERİ
+# ════════════════════════════════════════════════════════════
+with st.spinner("📡 Güncel fiyat verileri çekiliyor..."):
+    live_dizel    = fetch_diesel_price()
+    live_elektrik = fetch_electricity_price()
+    live_tufe     = fetch_tufe()
+
+col_d, col_e, col_t = st.columns(3)
+with col_d:
+    if live_dizel:
+        st.success(f"✅ Dizel (EPDK): {fmt_number(live_dizel)} ₺/litre")
+    else:
+        st.warning("⚠ Dizel fiyatı alınamadı")
+with col_e:
+    if live_elektrik:
+        st.success(f"✅ Elektrik (EPDK): {fmt_number(live_elektrik)} ₺/kWh")
+    else:
+        st.warning("⚠ Elektrik fiyatı alınamadı")
+with col_t:
+    if live_tufe:
+        st.success(f"✅ TÜFE (TÜİK): %{live_tufe*100:.1f}")
+    else:
+        st.warning("⚠ TÜFE verisi alınamadı")
+
+st.divider()
+
+# ════════════════════════════════════════════════════════════
+#  KULLANICI GİRİŞLERİ – SIDEBAR
+# ════════════════════════════════════════════════════════════
+st.sidebar.header("📋 Filo Bilgileri")
+
+st.sidebar.subheader("Araç Sayıları")
+n_otobus  = st.sidebar.number_input("Mevcut otobüs sayısı", min_value=0, value=10, step=1)
+n_minibus = st.sidebar.number_input("Mevcut minibüs sayısı", min_value=0, value=20, step=1)
+
+st.sidebar.subheader("Elektrikliye Dönüşecek Araç Sayısı")
+elk_otobus  = st.sidebar.number_input(f"Elektrikli otobüs (max {n_otobus})",
+                                       min_value=0, max_value=int(n_otobus), value=min(10, int(n_otobus)), step=1)
+elk_minibus = st.sidebar.number_input(f"Elektrikli minibüs (max {n_minibus})",
+                                       min_value=0, max_value=int(n_minibus), value=min(20, int(n_minibus)), step=1)
+
+st.sidebar.subheader("Araç Birim Fiyatları (₺)")
+fiyat_elk_otobus  = st.sidebar.number_input("Elektrikli otobüs (₺)", min_value=0.0, value=5_000_000.0, step=100_000.0, format="%.0f")
+fiyat_elk_minibus = st.sidebar.number_input("Elektrikli minibüs (₺)", min_value=0.0, value=2_000_000.0, step=100_000.0, format="%.0f")
+
+st.sidebar.subheader("Yıllık Bakım Maliyetleri (₺/araç)")
+bakim_diz_otobus  = st.sidebar.number_input("Dizel otobüs bakım", min_value=0.0, value=80_000.0, step=1_000.0, format="%.0f")
+bakim_diz_minibus = st.sidebar.number_input("Dizel minibüs bakım", min_value=0.0, value=40_000.0, step=1_000.0, format="%.0f")
+bakim_elk_otobus  = st.sidebar.number_input("Elektrikli otobüs bakım", min_value=0.0, value=50_000.0, step=1_000.0, format="%.0f")
+bakim_elk_minibus = st.sidebar.number_input("Elektrikli minibüs bakım", min_value=0.0, value=25_000.0, step=1_000.0, format="%.0f")
+
+st.sidebar.subheader("Yakıt / Enerji Fiyatları (₺)")
+dizel_fiyat    = st.sidebar.number_input("Dizel (₺/litre)",  min_value=0.0,
+                                          value=float(live_dizel or 45.0), step=0.5, format="%.2f")
+elektrik_fiyat = st.sidebar.number_input("Elektrik (₺/kWh)", min_value=0.0,
+                                           value=float(live_elektrik or 4.5), step=0.1, format="%.2f")
+
+st.sidebar.subheader("Yıllık Toplam Kilometre (tüm filo)")
+km_otobus  = st.sidebar.number_input("Otobüsler (km/yıl)",  min_value=0.0, value=1_000_000.0, step=10_000.0, format="%.0f")
+km_minibus = st.sidebar.number_input("Minibüsler (km/yıl)", min_value=0.0, value=2_000_000.0, step=10_000.0, format="%.0f")
+
+tufe_oran = st.sidebar.number_input("Yıllık TÜFE oranı (%)",
+                                     min_value=0.0, max_value=200.0,
+                                     value=float((live_tufe or 0.45) * 100), step=1.0, format="%.1f") / 100
+
+analiz_dugmesi = st.sidebar.button("🚀 ANALİZİ BAŞLAT", type="primary", use_container_width=True)
+
+# ════════════════════════════════════════════════════════════
+#  HESAPLAMA FONKSİYONLARI
+# ════════════════════════════════════════════════════════════
+def senaryo_tanimla(oran, n_oto, n_min, elk_oto_max, elk_min_max):
+    elk_oto = round(elk_oto_max * oran)
+    elk_min = round(elk_min_max * oran)
+    return {"elk_oto": elk_oto, "elk_min": elk_min,
+            "diz_oto": n_oto - elk_oto, "diz_min": n_min - elk_min}
+
+def emisyon_hesapla(s, km_oto, km_min):
+    e_ttw = (
+        (s["diz_oto"] > 0) * km_oto * OTOBÜS_DIZEL_TUKETIM * EF_DIZEL_YAKIM +
+        (s["elk_oto"] > 0) * km_oto * OTOBÜS_ELK_TUKETIM   * EF_ELEKTRIK_TUKETIM +
+        (s["diz_min"] > 0) * km_min * MINIBÜS_DIZEL_TUKETIM * EF_DIZEL_YAKIM +
+        (s["elk_min"] > 0) * km_min * MINIBÜS_ELK_TUKETIM   * EF_ELEKTRIK_TUKETIM
+    )
+    e_wtt = (
+        (s["diz_oto"] > 0) * km_oto * OTOBÜS_DIZEL_TUKETIM * EF_DIZEL_UPSTREAM +
+        (s["elk_oto"] > 0) * km_oto * OTOBÜS_ELK_TUKETIM   * EF_ELEKTRIK_UPSTREAM +
+        (s["diz_min"] > 0) * km_min * MINIBÜS_DIZEL_TUKETIM * EF_DIZEL_UPSTREAM +
+        (s["elk_min"] > 0) * km_min * MINIBÜS_ELK_TUKETIM   * EF_ELEKTRIK_UPSTREAM
+    )
+    return {
+        "TTW_CO2": e_ttw / 1000,
+        "WTT_CO2": e_wtt / 1000,
+        "WTW_CO2": (e_ttw + e_wtt) / 1000,
+        "NOx":     e_ttw * 0.0015 / 1000,
+        "PM":      e_ttw * 0.00008 / 1000,
+        "HC":      e_ttw * 0.0003 / 1000,
+    }
+
+def yillik_yakit_maliyeti(s, km_oto, km_min, dizel_f, elek_f):
+    return (
+        s["diz_oto"] * (km_oto / max(n_otobus, 1)) * OTOBÜS_DIZEL_TUKETIM * dizel_f +
+        s["elk_oto"] * (km_oto / max(n_otobus, 1)) * OTOBÜS_ELK_TUKETIM   * elek_f +
+        s["diz_min"] * (km_min / max(n_minibus, 1)) * MINIBÜS_DIZEL_TUKETIM * dizel_f +
+        s["elk_min"] * (km_min / max(n_minibus, 1)) * MINIBÜS_ELK_TUKETIM   * elek_f
+    )
+
+def yillik_bakim_maliyeti(s, tufe_kat=1.0):
+    return (
+        s["diz_oto"] * bakim_diz_otobus +
+        s["diz_min"] * bakim_diz_minibus +
+        s["elk_oto"] * bakim_elk_otobus +
+        s["elk_min"] * bakim_elk_minibus
+    ) * tufe_kat
+
+def arac_yatirim_maliyeti(s):
+    return s["elk_oto"] * fiyat_elk_otobus + s["elk_min"] * fiyat_elk_minibus
+
+def amorti_yili_bul(s, ref_s):
+    yatirim = arac_yatirim_maliyeti(s)
+    if yatirim == 0:
+        return 0
+    annuity_b = sum((1 + tufe_oran)**k for k in range(MAX_AMORTI_YIL))
+    baz_odeme = yatirim / annuity_b if annuity_b > 0 else 0
+    kum = 0
+    for yil in range(1, MAX_AMORTI_YIL + 1):
+        tufe_kat   = (1 + tufe_oran) ** (yil - 1)
+        tasarruf   = (
+            yillik_yakit_maliyeti(ref_s, km_otobus, km_minibus, dizel_fiyat, elektrik_fiyat) +
+            yillik_bakim_maliyeti(ref_s, tufe_kat)
+        ) - (
+            yillik_yakit_maliyeti(s, km_otobus, km_minibus, dizel_fiyat, elektrik_fiyat) +
+            yillik_bakim_maliyeti(s, tufe_kat)
+        )
+        kum += tasarruf - baz_odeme * tufe_kat
+        if kum >= 0:
+            return yil
+    return None
+
+# ════════════════════════════════════════════════════════════
+#  GRAFİK FONKSİYONLARI
+# ════════════════════════════════════════════════════════════
+
+def grafik_emisyon(emisyonlar, senaryolar):
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle("Senaryo Bazlı Emisyon Faktörü Karşılaştırması\n(Well-to-Wheel Metodolojisi)",
+                 fontsize=14, fontweight="bold", y=1.01)
+
+    metrikler = [
+        ("WTW_CO2", "WTW CO₂e (ton/yıl)",  "Tam Yakıt Döngüsü"),
+        ("TTW_CO2", "TTW CO₂e (ton/yıl)",  "Tank-to-Wheel"),
+        ("WTT_CO2", "WTT CO₂e (ton/yıl)",  "Well-to-Tank"),
+        ("NOx",     "NOx (ton/yıl)",        "Azot Oksitler"),
+        ("PM",      "PM (ton/yıl)",         "Partikül Madde"),
+        ("HC",      "HC (ton/yıl)",         "Hidrokarbonlar"),
+    ]
+    senaryo_adlari = list(senaryolar.keys())
+    x = np.arange(len(senaryo_adlari))
+
+    for ax, (metrik, ylabel, baslik) in zip(axes.flat, metrikler):
+        degerler = [emisyonlar[ad][metrik] for ad in senaryo_adlari]
+        renkler  = [RENKLER[ad] for ad in senaryo_adlari]
+        bars = ax.bar(x, degerler, color=renkler, width=0.55, alpha=0.88, edgecolor="white")
+        for bar, val in zip(bars, degerler):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(degerler)*0.01,
+                    f"{val:,.1f}", ha="center", va="bottom", fontsize=8, fontweight="bold")
+        ax.set_xticks(x)
+        ax.set_xticklabels(senaryo_adlari, fontsize=8, rotation=15, ha="right")
+        ax.set_ylabel(ylabel, fontsize=9)
+        ax.set_title(baslik, fontsize=10, fontweight="bold")
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, p: f"{v:,.0f}"))
+        ref = degerler[0]
+        for i, (bar, val) in enumerate(zip(bars, degerler)):
+            if i > 0 and ref > 0:
+                az = (ref - val) / ref * 100
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height()/2,
+                        f"−{az:.0f}%", ha="center", va="center",
+                        color="white", fontsize=7, fontweight="bold")
+
+    patches = [mpatches.Patch(color=RENKLER[ad], label=ad) for ad in senaryo_adlari]
+    fig.legend(handles=patches, loc="lower center", ncol=4, frameon=True,
+               fontsize=9, bbox_to_anchor=(0.5, -0.04))
+    plt.tight_layout()
+    return fig
+
+
+def grafik_mevcut_durum(analiz_yili, senaryolar):
+    s = senaryolar["Mevcut Durum"]
+    giderler = []
+    for yil in range(1, analiz_yili + 1):
+        tufe_kat = (1 + tufe_oran) ** (yil - 1)
+        aylik = (yillik_yakit_maliyeti(s, km_otobus, km_minibus, dizel_fiyat, elektrik_fiyat) +
+                 yillik_bakim_maliyeti(s, tufe_kat)) / 12
+        giderler.extend([aylik] * 12)
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+    for yil in range(1, analiz_yili + 1):
+        start, end = (yil - 1) * 12, yil * 12
+        c = "#1A5276" if yil % 2 == 1 else "#1E8449"
+        ax.plot(list(range(start, end)), giderler[start:end], color=c, linewidth=2)
+        ax.fill_between(list(range(start, end)), giderler[start:end], alpha=0.08, color=c)
+    ax.set_title(f"Mevcut Durum – Aylık Toplam Gider ({analiz_yili} Yıl | TÜFE dahil)",
+                 fontsize=12, fontweight="bold")
+    ax.set_xlabel("Ay")
+    ax.set_ylabel("Aylık Gider (₺)")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, p: f"{v:,.0f} ₺"))
+    ax.set_xticks(range(0, len(giderler), 12))
+    ax.set_xticklabels([f"Yıl {i+1}" for i in range(analiz_yili)])
+    ax.legend(handles=[
+        mpatches.Patch(color="#1A5276", label="Tek Yıllar"),
+        mpatches.Patch(color="#1E8449", label="Çift Yıllar"),
+    ], loc="upper left")
+    plt.tight_layout()
+    return fig
+
+
+def grafik_senaryo_maliyet(senaryo_adi, s, ref_s, emisyonlar, analiz_yili, amorti_yil):
+    renk    = RENKLER[senaryo_adi]
+    yatirim = arac_yatirim_maliyeti(s)
+    annuity_b = sum((1 + tufe_oran)**k for k in range(analiz_yili))
+    baz_odeme = yatirim / annuity_b if annuity_b > 0 else 0
+
+    kum_net = 0
+    yillik_netleri, yil_odeme, yil_toplam = [], [], []
+    kum_e_ref = kum_e_yeni = 0
+    odeme_plani = []
+
+    for yil in range(1, analiz_yili + 1):
+        tufe_kat   = (1 + tufe_oran) ** (yil - 1)
+        y_yeni     = yillik_yakit_maliyeti(s, km_otobus, km_minibus, dizel_fiyat, elektrik_fiyat)
+        b_yeni     = yillik_bakim_maliyeti(s, tufe_kat)
+        y_ref      = yillik_yakit_maliyeti(ref_s, km_otobus, km_minibus, dizel_fiyat, elektrik_fiyat)
+        b_ref      = yillik_bakim_maliyeti(ref_s, tufe_kat)
+        tasarruf   = (y_ref + b_ref) - (y_yeni + b_yeni)
+        odeme      = baz_odeme * tufe_kat
+        kum_net   += tasarruf - odeme
+        yillik_netleri.append(kum_net)
+        yil_odeme.append(odeme)
+        yil_toplam.append(y_yeni + b_yeni + odeme)
+        kum_e_ref  += emisyonlar["Mevcut Durum"]["WTW_CO2"]
+        kum_e_yeni += emisyonlar[senaryo_adi]["WTW_CO2"]
+        odeme_plani.append({
+            "Yıl": yil,
+            "Aylık Taksit (₺)": f"{odeme/12:,.0f}",
+            "Yıllık Taksit (₺)": f"{odeme:,.0f}",
+            "Yıllık Tasarruf (₺)": f"{tasarruf:,.0f}",
+            "Kümülatif Net (₺)": f"{kum_net:,.0f}",
+        })
+
+    emisyon_azalma     = kum_e_ref - kum_e_yeni
+    emisyon_azalma_pct = emisyon_azalma / kum_e_ref * 100 if kum_e_ref > 0 else 0
+    yillar = list(range(1, analiz_yili + 1))
+
+    # ── Grafik 1: Başabaş + Toplam Gider ──
+    fig1, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig1.suptitle(
+        f"{senaryo_adi} – Başabaş & Maliyet\n"
+        f"(Başabaş: {'Yıl ' + str(amorti_yil) if amorti_yil else 'Bulunamadı'} | Dönem: {analiz_yili} yıl)",
+        fontsize=13, fontweight="bold"
+    )
+    ax1 = axes[0]
+    ax1.axhline(0, color="black", linewidth=1.2, linestyle="--", alpha=0.6)
+    ax1.plot(yillar, yillik_netleri, color=renk, linewidth=2.5, marker="o", markersize=5)
+    ax1.fill_between(yillar, yillik_netleri, 0,
+                     where=[v >= 0 for v in yillik_netleri], alpha=0.2, color="green", label="Kâr")
+    ax1.fill_between(yillar, yillik_netleri, 0,
+                     where=[v < 0 for v in yillik_netleri], alpha=0.2, color="red", label="Zarar")
+    if amorti_yil:
+        ax1.axvline(amorti_yil, color="darkgreen", linestyle=":", linewidth=1.8)
+        ax1.text(amorti_yil + 0.1, min(yillik_netleri) * 0.8,
+                 f"Başabaş\nYıl {amorti_yil}", color="darkgreen", fontsize=9, fontweight="bold")
+    ax1.set_title("Kümülatif Net Tasarruf", fontsize=10, fontweight="bold")
+    ax1.set_xlabel("Yıl")
+    ax1.set_ylabel("₺")
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(format_tl))
+    ax1.legend()
+
+    ax2 = axes[1]
+    ax2.bar(yillar, yil_toplam, color=renk, alpha=0.75, edgecolor="white")
+    ax2.set_title("Yıllık Toplam Gider\n(Yakıt + Bakım + Taksit)", fontsize=10, fontweight="bold")
+    ax2.set_xlabel("Yıl")
+    ax2.set_ylabel("₺")
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(format_tl))
+    plt.tight_layout()
+
+    # ── Grafik 2: Emisyon Azalması ──
+    fig2, axes2 = plt.subplots(1, 2, figsize=(14, 5))
+    fig2.suptitle(f"{senaryo_adi} – {analiz_yili} Yıllık Emisyon Azalması (Mevcut Duruma Kıyasla)",
+                  fontsize=12, fontweight="bold")
+
+    ax_e1 = axes2[0]
+    ref_e_yil  = [emisyonlar["Mevcut Durum"]["WTW_CO2"]] * analiz_yili
+    yeni_e_yil = [emisyonlar[senaryo_adi]["WTW_CO2"]] * analiz_yili
+    ax_e1.plot(yillar, ref_e_yil,  color=RENKLER["Mevcut Durum"], linewidth=2,
+               linestyle="--", label="Mevcut Durum")
+    ax_e1.plot(yillar, yeni_e_yil, color=renk, linewidth=2.5, marker="o",
+               markersize=5, label=senaryo_adi)
+    ax_e1.fill_between(yillar, ref_e_yil, yeni_e_yil, alpha=0.18, color=renk,
+                       label=f"Azalma: {ref_e_yil[0]-yeni_e_yil[0]:,.1f} ton/yıl")
+    ax_e1.set_title("Yıllık WTW CO₂e", fontsize=10, fontweight="bold")
+    ax_e1.set_xlabel("Yıl"); ax_e1.set_ylabel("ton CO₂e/yıl")
+    ax_e1.legend(fontsize=8)
+    ax_e1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, p: f"{v:,.0f}"))
+
+    ax_e2 = axes2[1]
+    kum_ref_s  = [emisyonlar["Mevcut Durum"]["WTW_CO2"] * y for y in yillar]
+    kum_yeni_s = [emisyonlar[senaryo_adi]["WTW_CO2"] * y for y in yillar]
+    ax_e2.plot(yillar, kum_ref_s,  color=RENKLER["Mevcut Durum"], linewidth=2,
+               linestyle="--", label="Mevcut Durum")
+    ax_e2.plot(yillar, kum_yeni_s, color=renk, linewidth=2.5, marker="o",
+               markersize=5, label=senaryo_adi)
+    ax_e2.fill_between(yillar, kum_ref_s, kum_yeni_s, alpha=0.18, color=renk,
+                       label=f"Toplam: {emisyon_azalma:,.1f} ton (−%{emisyon_azalma_pct:.1f})")
+    ax_e2.set_title(f"Kümülatif CO₂e ({analiz_yili} yıl)", fontsize=10, fontweight="bold")
+    ax_e2.set_xlabel("Yıl"); ax_e2.set_ylabel("Kümülatif ton CO₂e")
+    ax_e2.legend(fontsize=8)
+    ax_e2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, p: f"{v:,.0f}"))
+    plt.tight_layout()
+
+    # ── Grafik 3: Taksit ──
+    fig3, ax3 = plt.subplots(figsize=(12, 4))
+    ax3.bar(yillar, yil_odeme, color=renk, alpha=0.8, edgecolor="white")
+    for y, od in zip(yillar, yil_odeme):
+        ax3.text(y, od + max(yil_odeme) * 0.01, f"{od/12:,.0f} ₺/ay",
+                 ha="center", va="bottom", fontsize=8)
+    ax3.set_title(f"{senaryo_adi} – Yıllık Taksit Ödemesi (TÜFE Artışlı | {analiz_yili} yıl)",
+                  fontsize=11, fontweight="bold")
+    ax3.set_xlabel("Yıl"); ax3.set_ylabel("₺")
+    ax3.yaxis.set_major_formatter(mticker.FuncFormatter(format_tl))
+    plt.tight_layout()
+
+    return fig1, fig2, fig3, pd.DataFrame(odeme_plani), emisyon_azalma, emisyon_azalma_pct, kum_e_ref, kum_e_yeni
+
+
+def grafik_genel_karsilastirma(senaryolar, emisyonlar, amorti_yillari):
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle("Tüm Senaryolar – Maliyet ve Emisyon Özeti (Başabaş Bazlı)",
+                 fontsize=13, fontweight="bold")
+
+    ax1 = axes[0]
+    ax1.axhline(0, color="black", linewidth=1.2, linestyle="--", alpha=0.6)
+    ref_s = senaryolar["Mevcut Durum"]
+
+    for ad, s in senaryolar.items():
+        if ad == "Mevcut Durum":
+            continue
+        ay = amorti_yillari.get(ad)
+        n  = ay if ay else MAX_AMORTI_YIL
+        yatirim = arac_yatirim_maliyeti(s)
+        ab = sum((1 + tufe_oran)**k for k in range(n))
+        baz = yatirim / ab if ab else 0
+        kum = 0
+        netleri = []
+        for yil in range(1, n + 1):
+            tc = (1 + tufe_oran) ** (yil - 1)
+            ts = (
+                yillik_yakit_maliyeti(ref_s, km_otobus, km_minibus, dizel_fiyat, elektrik_fiyat) +
+                yillik_bakim_maliyeti(ref_s, tc)
+            ) - (
+                yillik_yakit_maliyeti(s, km_otobus, km_minibus, dizel_fiyat, elektrik_fiyat) +
+                yillik_bakim_maliyeti(s, tc)
+            )
+            kum += ts - baz * tc
+            netleri.append(kum)
+        lbl = f"{ad} ({'Yıl ' + str(ay) if ay else 'Başabaş Yok'})"
+        ax1.plot(list(range(1, n+1)), netleri, color=RENKLER[ad],
+                 linewidth=2.5, marker="o", markersize=4, label=lbl)
+    ax1.set_title("Kümülatif Net Tasarruf (Mevcut Duruma Göre)", fontsize=10, fontweight="bold")
+    ax1.set_xlabel("Yıl"); ax1.set_ylabel("₺")
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(format_tl))
+    ax1.legend(fontsize=8)
+
+    ax2 = axes[1]
+    senaryo_adlari = list(senaryolar.keys())
+    wtw_vals = [emisyonlar[ad]["WTW_CO2"] for ad in senaryo_adlari]
+    bars = ax2.bar(senaryo_adlari, wtw_vals, color=[RENKLER[ad] for ad in senaryo_adlari],
+                   alpha=0.85, edgecolor="white")
+    ref_val = emisyonlar["Mevcut Durum"]["WTW_CO2"]
+    for bar, val, ad in zip(bars, wtw_vals, senaryo_adlari):
+        az = (ref_val - val) / ref_val * 100 if ref_val > 0 and ad != "Mevcut Durum" else 0
+        lbl = f"{val:,.0f} ton" + (f"\n(−%{az:.0f})" if az > 0 else "")
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(wtw_vals)*0.01,
+                 lbl, ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax2.set_title("Yıllık WTW CO₂e Emisyonu (ton/yıl)", fontsize=10, fontweight="bold")
+    ax2.set_ylabel("CO₂e (ton/yıl)")
+    ax2.set_xticklabels(senaryo_adlari, rotation=15, ha="right")
+    plt.tight_layout()
+    return fig
+
+# ════════════════════════════════════════════════════════════
+#  ANA ANALİZ AKIŞI
+# ════════════════════════════════════════════════════════════
+if analiz_dugmesi:
+    senaryolar = {
+        "Mevcut Durum":   senaryo_tanimla(0,   n_otobus, n_minibus, elk_otobus, elk_minibus),
+        "1/3 Elektrikli": senaryo_tanimla(1/3, n_otobus, n_minibus, elk_otobus, elk_minibus),
+        "2/3 Elektrikli": senaryo_tanimla(2/3, n_otobus, n_minibus, elk_otobus, elk_minibus),
+        "Tam Elektrikli": senaryo_tanimla(1.0, n_otobus, n_minibus, elk_otobus, elk_minibus),
+    }
+    emisyonlar = {ad: emisyon_hesapla(s, km_otobus, km_minibus) for ad, s in senaryolar.items()}
+
+    # Amorti yıllarını bul
+    amorti_yillari = {}
+    for ad in ["1/3 Elektrikli", "2/3 Elektrikli", "Tam Elektrikli"]:
+        amorti_yillari[ad] = amorti_yili_bul(senaryolar[ad], senaryolar["Mevcut Durum"])
+
+    min_amorti = min((v for v in amorti_yillari.values() if v is not None), default=MAX_AMORTI_YIL)
+
+    # ── Başabaş Özeti ──
+    st.subheader("📌 Başabaş Noktaları (Otomatik Hesaplama)")
+    cols = st.columns(3)
+    for col, ad in zip(cols, ["1/3 Elektrikli", "2/3 Elektrikli", "Tam Elektrikli"]):
+        ay = amorti_yillari[ad]
+        with col:
+            if ay:
+                st.metric(ad, f"Yıl {ay}", delta=f"Analiz: {ay} yıl")
+            else:
+                st.metric(ad, f"{MAX_AMORTI_YIL} yıl içinde yok", delta="Başabaş bulunamadı", delta_color="inverse")
+
+    st.divider()
+
+    # ── Emisyon Grafiği ──
+    st.subheader("🌍 Senaryo Bazlı Emisyon Karşılaştırması")
+    fig_e = grafik_emisyon(emisyonlar, senaryolar)
+    st.pyplot(fig_e)
+    plt.close(fig_e)
+
+    st.divider()
+
+    # ── Mevcut Durum ──
+    st.subheader("📊 Mevcut Durum – Aylık Gider Trendi")
+    fig_md = grafik_mevcut_durum(min_amorti, senaryolar)
+    st.pyplot(fig_md)
+    plt.close(fig_md)
+
+    st.divider()
+
+    # ── Senaryo Analizleri ──
+    ref_s = senaryolar["Mevcut Durum"]
+    for senaryo_adi, label in [("1/3 Elektrikli", "Senaryo 2"),
+                                ("2/3 Elektrikli", "Senaryo 3"),
+                                ("Tam Elektrikli", "Senaryo 4")]:
+        ay = amorti_yillari[senaryo_adi]
+        analiz_yili = ay if ay else MAX_AMORTI_YIL
+        s = senaryolar[senaryo_adi]
+
+        with st.expander(f"📂 [{label}] {senaryo_adi} – Detaylı Analiz ({analiz_yili} yıl)", expanded=True):
+            if ay:
+                st.info(f"ℹ Başabaş noktası **Yıl {ay}** olarak hesaplandı. Analiz bu süreye göre yapılandırıldı.")
+            else:
+                st.warning(f"⚠ {MAX_AMORTI_YIL} yıl içinde başabaş sağlanamıyor. Analiz {MAX_AMORTI_YIL} yıl üzerinden gösterildi.")
+
+            fig1, fig2, fig3, df_odeme, e_azalma, e_azalma_pct, kum_e_ref, kum_e_yeni = \
+                grafik_senaryo_maliyet(senaryo_adi, s, ref_s, emisyonlar, analiz_yili, ay)
+
+            # KPI metrikleri
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Toplam Yatırım", f"{fmt_number(arac_yatirim_maliyeti(s))} ₺")
+            col2.metric("Başabaş Yılı", f"Yıl {ay}" if ay else "Bulunamadı")
+            col3.metric(f"Kümülatif CO₂e Azalması ({analiz_yili} yıl)", f"{e_azalma:,.1f} ton")
+            col4.metric("Emisyon Azalma Oranı", f"%{e_azalma_pct:.1f}")
+
+            st.pyplot(fig1); plt.close(fig1)
+            st.pyplot(fig2); plt.close(fig2)
+            st.pyplot(fig3); plt.close(fig3)
+
+            st.markdown("**📋 Ödeme Planı (Başabaş Süresince)**")
+            st.dataframe(df_odeme, use_container_width=True)
+
+        st.divider()
+
+    # ── Genel Karşılaştırma ──
+    st.subheader("📊 Tüm Senaryolar – Genel Karşılaştırma")
+    fig_gk = grafik_genel_karsilastirma(senaryolar, emisyonlar, amorti_yillari)
+    st.pyplot(fig_gk)
+    plt.close(fig_gk)
+
+    st.divider()
+
+    # ── En İyi Senaryo ──
+    st.subheader("🏆 En İyi Senaryo Analizi")
+    sonuc = []
+    for ad, s in senaryolar.items():
+        ay = amorti_yillari.get(ad, MAX_AMORTI_YIL) if ad != "Mevcut Durum" else 0
+        n  = ay if ay else MAX_AMORTI_YIL
+        toplam_m = sum(
+            yillik_yakit_maliyeti(s, km_otobus, km_minibus, dizel_fiyat, elektrik_fiyat) +
+            yillik_bakim_maliyeti(s, (1 + tufe_oran) ** (yil - 1))
+            for yil in range(1, n + 1)
+        )
+        ort_m = toplam_m / n if n > 0 else toplam_m
+        skor  = 0.6 * ort_m + 0.4 * emisyonlar[ad]["WTW_CO2"] * 1e6
+        sonuc.append({
+            "Senaryo":                  ad,
+            "Başabaş Yılı":             str(ay) if ad != "Mevcut Durum" else "—",
+            "Yatırım (₺)":              fmt_number(arac_yatirim_maliyeti(s)),
+            "Ort. Yıllık Maliyet (₺)": fmt_number(ort_m),
+            "WTW Emisyon (ton/yıl)":    f"{emisyonlar[ad]['WTW_CO2']:,.1f}",
+            "Skor (↓ iyi)":             f"{skor:,.0f}",
+        })
+    df_sonuc = pd.DataFrame(sonuc)
+    en_iyi   = min(sonuc, key=lambda x: float(x["Skor (↓ iyi)"].replace(".", "").replace(",", ".")))
+
+    st.dataframe(df_sonuc, use_container_width=True)
+    st.success(f"✅ En İyi Senaryo: **{en_iyi['Senaryo']}**  |  "
+               f"Başabaş: {en_iyi['Başabaş Yılı']}. Yıl  |  "
+               f"Ort. Maliyet: {en_iyi['Ort. Yıllık Maliyet (₺)']} ₺  |  "
+               f"Emisyon: {en_iyi['WTW Emisyon (ton/yıl)']} ton CO₂e/yıl")
+
+    # ── Özet Bilgi ──
+    st.divider()
+    st.subheader("📋 Analiz Özeti")
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.write(f"**Dizel:** {fmt_number(dizel_fiyat)} ₺/litre")
+        st.write(f"**Elektrik:** {fmt_number(elektrik_fiyat)} ₺/kWh")
+        st.write(f"**TÜFE:** %{tufe_oran*100:.1f}")
+    with col_b:
+        st.write(f"**Otobüs:** {n_otobus} adet → {elk_otobus} elektrikliye dönüşüm")
+        st.write(f"**Minibüs:** {n_minibus} adet → {elk_minibus} elektrikliye dönüşüm")
+    with col_c:
+        for ad, ay in amorti_yillari.items():
+            st.write(f"**{ad}:** {'Yıl ' + str(ay) if ay else str(MAX_AMORTI_YIL) + ' yıl içinde yok'}")
+
+else:
+    st.info("👈 Sol panelden filo bilgilerinizi girin ve **ANALİZİ BAŞLAT** butonuna tıklayın.")
+    st.markdown("""
+    **Bu sistem şu analizleri yapar:**
+    - ✅ Başabaş noktasını (amorti yılını) **otomatik hesaplar**
+    - ✅ Her senaryo için **amorti süresindeki emisyon azalmasını** gösterir
+    - ✅ Her senaryonun ödeme planını **başabaş noktasına kadar** listeler
+    - ✅ WTW (Well-to-Wheel) metodolojisiyle **kapsamlı emisyon analizi** yapar
+    """)
