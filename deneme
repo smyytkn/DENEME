@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as fgo
+import matplotlib.pyplot as plt
 
 # ─── SAYFA AYARLARI ──────────────────────────────────────────────────────────
 st.set_page_config(page_title="Filo Dönüşümü Karar Destek Sistemi", layout="wide")
 
+# Modern Karanlık Tema Renk Paleti (Matplotlib Grafiklerine Aktarılacak)
 COLORS = {
     "bg": "#0a0f1e",
     "surface": "#111827",
@@ -12,16 +13,18 @@ COLORS = {
     "border": "#1e3a5f",
     "accent": "#00d4ff",
     "accent2": "#00ff9d",
-    "s1": "#38bdf8",     
-    "s2": "#a78bfa",     
-    "s3": "#34d399",     
-    "current": "#fb923c" 
+    "text": "#e2e8f0",
+    "muted": "#64748b",
+    "s1": "#38bdf8",     # Senaryo 1 - Mavi
+    "s2": "#a78bfa",     # Senaryo 2 - Mor
+    "s3": "#34d399",     # Senaryo 3 - Yeşil
+    "current": "#fb923c" # Mevcut Durum - Turuncu
 }
 
-# Sabit CSS Tasarımı
+# Streamlit Arayüzü İçin Sabit CSS
 st.markdown(f"""
     <style>
-    .stApp {{ background-color: {COLORS['bg']}; color: #e2e8f0; }}
+    .stApp {{ background-color: {COLORS['bg']}; color: {COLORS['text']}; }}
     div[data-testid="stMetricValue"] > div {{ color: {COLORS['accent']}; font-family: 'Space Mono', monospace; }}
     </style>
 """, unsafe_allow_html=True)
@@ -39,7 +42,7 @@ st.markdown(f"""
     <div style="text-align: center; padding: 10px; border-bottom: 1px solid {COLORS['border']}; margin-bottom: 25px;">
         <div style="font-size: 13px; color: {COLORS['accent']}; letter-spacing: 0.25em; font-weight: bold;">⚡ ELEKTRİKLİ ARAÇ GEÇİŞ ANALİZİ</div>
         <h2 style="margin: 5px 0; font-weight: 800; color: {COLORS['accent']};">Filo Dönüşümü Karar Destek Sistemi</h2>
-        <p style="color: #64748b; font-size: 13px; margin: 0;">Parametreleri sol panelden değiştirdiğinizde grafikler anlık güncellenir.</p>
+        <p style="color: {COLORS['muted']}; font-size: 13px; margin: 0;">Sol panelden girilen verilere göre analiz sonuçları anlık hesaplanır.</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -70,8 +73,7 @@ altyapi_s1 = st.sidebar.number_input("Senaryo 1 (1/3 Geçiş) Altyapı", min_val
 altyapi_s2 = st.sidebar.number_input("Senaryo 2 (2/3 Geçiş) Altyapı", min_value=0, value=900000, step=50000)
 altyapi_s3 = st.sidebar.number_input("Senaryo 3 (Tam Geçiş) Altyapı", min_value=0, value=1500000, step=50000)
 
-
-# ─── HESAPLAMA MOTORU (SABİT VERİ MODELİ) ─────────────────────────────────────
+# ─── HESAPLAMA MOTORU ─────────────────────────────────────────────────────────
 yillar = list(range(1, int(analiz_yili) + 1))
 enflasyon = float(tufe) / 100.0
 
@@ -104,13 +106,12 @@ def senaryo_hesapla(elektrik_orani, altyapi_yatirimi):
         })
     return {"veriler": veriler, "bas_bas": bas_bas, "toplam_ilk_yatirim": toplam_ilk_yatirim, "e_arac": e_arac}
 
-# Senaryoları çalıştır
+# Hesaplamaları tetikle
 s1 = senaryo_hesapla(1/3, altyapi_s1)
 s2 = senaryo_hesapla(2/3, altyapi_s2)
 s3 = senaryo_hesapla(1.0, altyapi_s3)
 
-
-# ─── SAĞ PANELİ ÇİZME (ANA EKRAN) ─────────────────────────────────────────────
+# ─── SAĞ PANEL (ANA EKRAN) GÖRÜNÜMÜ ──────────────────────────────────────────
 st.subheader("🎯 Başabaş Noktası Özeti")
 col1, col2, col3 = st.columns(3)
 with col1: st.metric("Senaryo 1 (1/3 Elektrik)", f"{s1['bas_bas']} Yıl" if s1['bas_bas'] else "Amorti Edilemiyor")
@@ -119,7 +120,7 @@ with col3: st.metric("Senaryo 3 (Tam Elektrik)", f"{s3['bas_bas']} Yıl" if s3['
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Özet Tablo
+# Özet Finansal Tablo
 son_yil_idx = int(analiz_yili) - 1
 ozet_df = pd.DataFrame({
     "Dönüştürülen Araç": [f"{s1['e_arac']} araç", f"{s2['e_arac']} araç", f"{s3['e_arac']} araç"],
@@ -131,48 +132,67 @@ st.dataframe(ozet_df, use_container_width=True)
 
 st.markdown("---")
 
-# Grafik Seçici (Dinamik)
+# Grafik Seçim Alanı
 chart_type = st.radio(
     "Grafik Görünümü Seçin:",
     ["📈 Başabaş Analizi (Kümülatif)", "📊 Yıllık Net Tasarruf", "💰 Toplam İşletme Giderleri"],
     horizontal=True
 )
 
-chart_layout = dict(
-    paper_bgcolor=COLORS["card"], plot_bgcolor=COLORS["surface"],
-    font=dict(color="#e2e8f0"),
-    xaxis=dict(gridcolor=f"{COLORS['border']}44", title="Yıllar", tickmode="linear"),
-    yaxis=dict(gridcolor=f"{COLORS['border']}44"),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-)
+# ─── MATPLOTLIB İLE GRAFİK ÜRETİMİ (MATLAB GÖRÜNÜMÜ) ──────────────────────────
+# Grafiğin arka plan stilini uygulamanın karanlık temasıyla eşitliyoruz
+plt.rcParams.update({
+    'figure.facecolor': COLORS['card'],
+    'axes.facecolor': COLORS['surface'],
+    'axes.edgecolor': COLORS['border'],
+    'text.color': COLORS['text'],
+    'axes.labelcolor': COLORS['text'],
+    'xtick.color': COLORS['text'],
+    'ytick.color': COLORS['text'],
+    'grid.color': COLORS['border'],
+    'grid.alpha': 0.3
+})
+
+fig, ax = plt.subplots(figsize=(10, 4.5))
 
 if "Başabaş" in chart_type:
-    fig = fgo.Figure()
-    fig.add_trace(fgo.Scatter(x=yillar, y=[v['kumulatif_kar'] for v in s1['veriler']], name="Senaryo 1 (1/3)", line=dict(color=COLORS['s1'], width=3)))
-    fig.add_trace(fgo.Scatter(x=yillar, y=[v['kumulatif_kar'] for v in s2['veriler']], name="Senaryo 2 (2/3)", line=dict(color=COLORS['s2'], width=3)))
-    fig.add_trace(fgo.Scatter(x=yillar, y=[v['kumulatif_kar'] for v in s3['veriler']], name="Senaryo 3 (Tam)", line=dict(color=COLORS['s3'], width=3)))
-    fig.add_shape(type="line", x0=1, y0=0, x1=max(yillar), y1=0, line=dict(color=COLORS['current'], width=2, dash="dash"))
-    fig.update_layout(title="Yıllara Göre Kümülatif Kâr / Zarar Seyri (Sıfır Çizgisi = Amortisman)", **chart_layout)
-    st.plotly_chart(fig, use_container_width=True)
+    ax.plot(yillar, [v['kumulatif_kar'] for v in s1['veriler']], label="Senaryo 1 (1/3)", color=COLORS['s1'], linewidth=2.5, marker='o')
+    ax.plot(yillar, [v['kumulatif_kar'] for v in s2['veriler']], label="Senaryo 2 (2/3)", color=COLORS['s2'], linewidth=2.5, marker='s')
+    ax.plot(yillar, [v['kumulatif_kar'] for v in s3['veriler']], label="Senaryo 3 (Tam)", color=COLORS['s3'], linewidth=2.5, marker='^')
+    ax.axhline(0, color=COLORS['current'], linestyle='--', linewidth=1.5, label="Amortisman Eşiği (0 ₺)")
+    ax.set_title("Yıllara Göre Kümülatif Kâr / Zarar Seyri", fontsize=12, fontweight='bold', pad=15)
+    ax.set_ylabel("Kümülatif Kazanç (₺)")
 
 elif "Tasarruf" in chart_type:
-    fig = fgo.Figure()
-    fig.add_trace(fgo.Bar(x=yillar, y=[v['yillik_tasarruf'] for v in s1['veriler']], name="Senaryo 1", marker_color=COLORS['s1']))
-    fig.add_trace(fgo.Bar(x=yillar, y=[v['yillik_tasarruf'] for v in s2['veriler']], name="Senaryo 2", marker_color=COLORS['s2']))
-    fig.add_trace(fgo.Bar(x=yillar, y=[v['yillik_tasarruf'] for v in s3['veriler']], name="Senaryo 3", marker_color=COLORS['s3']))
-    fig.update_layout(title="Mevcut Duruma Kıyasla Sağlanan Yıllık Net İşletme Tasarrufu", bmode='group', **chart_layout)
-    st.plotly_chart(fig, use_container_width=True)
+    # Yan yana barlar oluşturmak için x koordinatlarını ayarlıyoruz
+    x = pd.Series(yillar)
+    width = 0.25
+    ax.bar(x - width, [v['yillik_tasarruf'] for v in s1['veriler']], width, label="Senaryo 1", color=COLORS['s1'])
+    ax.bar(x, [v['yillik_tasarruf'] for v in s2['veriler']], width, label="Senaryo 2", color=COLORS['s2'])
+    ax.bar(x + width, [v['yillik_tasarruf'] for v in s3['veriler']], width, label="Senaryo 3", color=COLORS['s3'])
+    ax.set_title("Mevcut Duruma Kıyasla Sağlanan Yıllık Net İşletme Tasarrufu", fontsize=12, fontweight='bold', pad=15)
+    ax.set_ylabel("Yıllık Tasarruf Girdisi (₺)")
 
 elif "Giderleri" in chart_type:
-    fig = fgo.Figure()
-    fig.add_trace(fgo.Scatter(x=yillar, y=[v['mevcut_gider'] for v in s1['veriler']], name="Mevcut Durum (Yakıtlı)", line=dict(color=COLORS['current'], width=3, dash="dot")))
-    fig.add_trace(fgo.Scatter(x=yillar, y=[v['senaryo_gider'] for v in s1['veriler']], name="Senaryo 1 Gideri", line=dict(color=COLORS['s1'])))
-    fig.add_trace(fgo.Scatter(x=yillar, y=[v['senaryo_gider'] for v in s2['veriler']], name="Senaryo 2 Gideri", line=dict(color=COLORS['s2'])))
-    fig.add_trace(fgo.Scatter(x=yillar, y=[v['senaryo_gider'] for v in s3['veriler']], name="Senaryo 3 Gideri", line=dict(color=COLORS['s3'])))
-    fig.update_layout(title="Yıllık Toplam İşletme Maliyeti Karşılaştırmaları (TÜFE Etkili)", **chart_layout)
-    st.plotly_chart(fig, use_container_width=True)
+    ax.plot(yillar, [v['mevcut_gider'] for v in s1['veriler']], label="Mevcut Durum (Yakıtlı)", color=COLORS['current'], linewidth=2.5, linestyle=':')
+    ax.plot(yillar, [v['senaryo_gider'] for v in s1['veriler']], label="Senaryo 1 Gideri", color=COLORS['s1'], linewidth=2)
+    ax.plot(yillar, [v['senaryo_gider'] for v in s2['veriler']], label="Senaryo 2 Gideri", color=COLORS['s2'], linewidth=2)
+    ax.plot(yillar, [v['senaryo_gider'] for v in s3['veriler']], label="Senaryo 3 Gideri", color=COLORS['s3'], linewidth=2)
+    ax.set_title("Yıllık Toplam İşletme Maliyeti Karşılaştırmaları (TÜFE Etkili)", fontsize=12, fontweight='bold', pad=15)
+    ax.set_ylabel("Yıllık Toplam Harcama (₺)")
 
-# Yıllık Detay Tablosu
+# Ortak Eksene ve Tasarıma Ait Ayarlar
+ax.set_xlabel("Analiz Yılları")
+ax.set_xticks(yillar)
+ax.grid(True)
+ax.legend(loc="upper left", facecolor=COLORS['card'], edgecolor=COLORS['border'])
+plt.tight_layout()
+
+# Grafiği Streamlit ekranına kurşungeçirmez bir şekilde basıyoruz
+st.pyplot(fig)
+
+
+# ─── DETAYLI PROJEKSİYON TABLOSU ──────────────────────────────────────────────
 st.markdown("### 📋 Yıllık Detay Projeksiyon Verileri")
 detay_rows = []
 for idx, yil in enumerate(yillar):
