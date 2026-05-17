@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as fgo
 
-# ─── SAYFA AYARLARI & KOSTÜM ──────────────────────────────────────────────────
+# ─── SAYFA AYARLARI ──────────────────────────────────────────────────────────
 st.set_page_config(page_title="Filo Dönüşümü Karar Destek Sistemi", layout="wide")
 
 COLORS = {
@@ -12,8 +12,6 @@ COLORS = {
     "border": "#1e3a5f",
     "accent": "#00d4ff",
     "accent2": "#00ff9d",
-    "accent3": "#ff6b35",
-    "text": "#e2e8f0",
     "muted": "#64748b",
     "s1": "#38bdf8",     
     "s2": "#a78bfa",     
@@ -21,10 +19,9 @@ COLORS = {
     "current": "#fb923c" 
 }
 
-# DOM çakışmasını engellemek için CSS alanını tek seferlik sabit olarak basıyoruz
 st.markdown(f"""
     <style>
-    .stApp {{ background-color: {COLORS['bg']}; color: {COLORS['text']}; }}
+    .stApp {{ background-color: {COLORS['bg']}; color: {COLORS['text'] if 'text' in COLORS else '#e2e8f0'}; }}
     div[data-testid="stMetricValue"] > div {{ color: {COLORS['accent']}; font-family: 'Space Mono', monospace; }}
     .stButton>button {{
         background: linear-gradient(135deg, {COLORS['accent']}, #0099bb);
@@ -34,6 +31,30 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
+# ─── 1. KRİTİK ADIM: SESSION STATE İLK DEĞER ATAMALARI (MUTLAK GÜVENCE) ──────
+if "step" not in st.session_state:
+    st.session_state.step = 0
+
+# Tüm girdileri önceden başlatıyoruz ki motor ilk saniyede çökmesin
+defaults = {
+    "arac_sayisi": 30, 
+    "analiz_yili": 8, 
+    "tufe": 35.0,
+    "yakit_arac_birim_maliyet": 1200000, 
+    "aylik_yakit_gideri": 8000, 
+    "aylik_bakim_gideri": 2500,
+    "elektrik_arac_birim_maliyet": 2200000, 
+    "aylik_elektrik_gideri": 3200, 
+    "aylik_elektrik_bakim_gideri": 1200,
+    "altyapi_s1": 500000, 
+    "altyapi_s2": 900000, 
+    "altyapi_s3": 1500000
+}
+
+for key, val in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
+
 # ─── YARDIMCI FONKSİYONLAR ────────────────────────────────────────────────────
 def fmt_k(n):
     if abs(n) >= 1_000_000:
@@ -42,11 +63,7 @@ def fmt_k(n):
         return f"{n / 1_000:.0f}K ₺"
     return f"{n:,.0f} ₺".replace(",", ".")
 
-# ─── SESSION STATE (ADIM YÖNETİMİ) ────────────────────────────────────────────
-if "step" not in st.session_state:
-    st.session_state.step = 0
-
-# Sabit Başlık (React DOM'un kaybetmeyeceği statik bir üst container)
+# Sabit Üst Başlık
 st.markdown(f"""
     <div style="text-align: center; padding: 10px; border-bottom: 1px solid {COLORS['border']}; margin-bottom: 25px;">
         <div style="font-size: 13px; color: {COLORS['accent']}; letter-spacing: 0.25em; font-weight: bold;">⚡ ELEKTRİKLİ ARAÇ GEÇİŞ ANALİZİ</div>
@@ -73,55 +90,43 @@ for idx, name in enumerate(steps):
 
 st.sidebar.markdown("---")
 
-# Varsayılan Değerler Güvencesi
-defaults = {
-    "arac_sayisi": 30, "analiz_yili": 8, "tufe": 35.0,
-    "yakit_arac_birim_maliyet": 1_200_000, "aylik_yakit_gideri": 8_000, "aylik_bakim_gideri": 2_500,
-    "elektrik_arac_birim_maliyet": 2_200_000, "aylik_elektrik_gideri": 3_200, "aylik_elektrik_bakim_gideri": 1_200,
-    "altyapi_s1": 500_000, "altyapi_s2": 900_000, "altyapi_s3": 1_500_000
-}
-for key, val in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = val
-
 # ─── ADIM İÇERİKLERİ ─────────────────────────────────────────────────────────
-# Her adımdaki input bileşenlerine 'key' atayarak DOM'da eşsiz kılıyoruz
 if st.session_state.step == 0:
     st.subheader("🚗 Filo ve Analiz Parametreleri")
-    st.session_state.arac_sayisi = st.number_input("Toplam Araç Sayısı (adet)", min_value=1, max_value=10000, value=st.session_state.arac_sayisi, key="inp_arac")
-    st.session_state.analiz_yili = st.number_input("Analiz Süresi (Yıl)", min_value=3, max_value=20, value=st.session_state.analiz_yili, key="inp_yil")
-    st.session_state.tufe = st.number_input("Yıllık TÜFE Oranı (%)", min_value=1.0, max_value=200.0, value=st.session_state.tufe, step=0.5, key="inp_tufe")
+    st.session_state.arac_sayisi = st.number_input("Toplam Araç Sayısı (adet)", min_value=1, max_value=10000, value=int(st.session_state.arac_sayisi), key="inp_arac")
+    st.session_state.analiz_yili = st.number_input("Analiz Süresi (Yıl)", min_value=3, max_value=20, value=int(st.session_state.analiz_yili), key="inp_yil")
+    st.session_state.tufe = st.number_input("Yıllık TÜFE Oranı (%)", min_value=1.0, max_value=200.0, value=float(st.session_state.tufe), step=0.5, key="inp_tufe")
 
 elif st.session_state.step == 1:
     st.subheader("⛽ Mevcut Durum – Yakıtlı Araç Maliyetleri")
-    st.session_state.yakit_arac_birim_maliyet = st.number_input("Yakıtlı Araç Alış Fiyatı (₺)", min_value=0, value=st.session_state.yakit_arac_birim_maliyet, step=10000, key="inp_y_fiyat")
-    st.session_state.aylik_yakit_gideri = st.number_input("Aylık Yakıt Gideri (Araç Başı ₺)", min_value=0, value=st.session_state.aylik_yakit_gideri, step=100, key="inp_y_yakit")
-    st.session_state.aylik_bakim_gideri = st.number_input("Aylık Bakım Gideri (Araç Başı ₺)", min_value=0, value=st.session_state.aylik_bakim_gideri, step=100, key="inp_y_bakim")
+    st.session_state.yakit_arac_birim_maliyet = st.number_input("Yakıtlı Araç Alış Fiyatı (₺)", min_value=0, value=int(st.session_state.yakit_arac_birim_maliyet), step=10000, key="inp_y_fiyat")
+    st.session_state.aylik_yakit_gideri = st.number_input("Aylık Yakıt Gideri (Araç Başı ₺)", min_value=0, value=int(st.session_state.aylik_yakit_gideri), step=100, key="inp_y_yakit")
+    st.session_state.aylik_bakim_gideri = st.number_input("Aylık Bakım Gideri (Araç Başı ₺)", min_value=0, value=int(st.session_state.aylik_bakim_gideri), step=100, key="inp_y_bakim")
 
 elif st.session_state.step == 2:
     st.subheader("⚡ Elektrikli Araç Maliyetleri")
-    st.session_state.elektrik_arac_birim_maliyet = st.number_input("Elektrikli Araç Alış Fiyatı (₺)", min_value=0, value=st.session_state.elektrik_arac_birim_maliyet, step=10000, key="inp_e_fiyat")
-    st.session_state.aylik_elektrik_gideri = st.number_input("Aylık Elektrik (Şarj) Gideri (Araç Başı ₺)", min_value=0, value=st.session_state.aylik_elektrik_gideri, step=100, key="inp_e_sarj")
-    st.session_state.aylik_elektrik_bakim_gideri = st.number_input("Aylık Bakım Gideri – Elektrikli (Araç Başı ₺)", min_value=0, value=st.session_state.aylik_elektrik_bakim_gideri, step=100, key="inp_e_bakim")
+    st.session_state.elektrik_arac_birim_maliyet = st.number_input("Elektrikli Araç Alış Fiyatı (₺)", min_value=0, value=int(st.session_state.elektrik_arac_birim_maliyet), step=10000, key="inp_e_fiyat")
+    st.session_state.aylik_elektrik_gideri = st.number_input("Aylık Elektrik (Şarj) Gideri (Araç Başı ₺)", min_value=0, value=int(st.session_state.aylik_elektrik_gideri), step=100, key="inp_e_sarj")
+    st.session_state.aylik_elektrik_bakim_gideri = st.number_input("Aylık Bakım Gideri – Elektrikli (Araç Başı ₺)", min_value=0, value=int(st.session_state.aylik_elektrik_bakim_gideri), step=100, key="inp_e_bakim")
 
 elif st.session_state.step == 3:
     st.subheader("🏗️ Senaryo Bazlı Altyapı Yatırımı")
     a_sayisi = st.session_state.arac_sayisi
-    st.session_state.altyapi_s1 = st.number_input(f"Altyapı Yatırımı – Senaryo 1 ({round(a_sayisi/3)} araç için ₺)", min_value=0, value=st.session_state.altyapi_s1, step=50000, key="inp_alt_s1")
-    st.session_state.altyapi_s2 = st.number_input(f"Altyapı Yatırımı – Senaryo 2 ({round(a_sayisi*2/3)} araç için ₺)", min_value=0, value=st.session_state.altyapi_s2, step=50000, key="inp_alt_s2")
-    st.session_state.altyapi_s3 = st.number_input(f"Altyapı Yatırımı – Senaryo 3 ({a_sayisi} araç için ₺)", min_value=0, value=st.session_state.altyapi_s3, step=50000, key="inp_alt_s3")
+    st.session_state.altyapi_s1 = st.number_input(f"Altyapı Yatırımı – Senaryo 1 ({round(a_sayisi/3)} araç için ₺)", min_value=0, value=int(st.session_state.altyapi_s1), step=50000, key="inp_alt_s1")
+    st.session_state.altyapi_s2 = st.number_input(f"Altyapı Yatırımı – Senaryo 2 ({round(a_sayisi*2/3)} araç için ₺)", min_value=0, value=int(st.session_state.altyapi_s2), step=50000, key="inp_alt_s2")
+    st.session_state.altyapi_s3 = st.number_input(f"Altyapı Yatırımı – Senaryo 3 ({a_sayisi} araç için ₺)", min_value=0, value=int(st.session_state.altyapi_s3), step=50000, key="inp_alt_s3")
 
-# ─── ARKA PLAN MOTORU ──────────────────────────────────────────────────────────
+# ─── HESAPLAMA MOTORU ─────────────────────────────────────────────────────────
 def dinamik_analiz_motoru():
     p = st.session_state
-    yillar = list(range(1, p.analiz_yili + 1))
-    enflasyon = p.tufe / 100.0
+    yillar = list(range(1, int(p.analiz_yili) + 1))
+    enflasyon = float(p.tufe) / 100.0
 
     def senaryo_hesapla(elektrik_orani, altyapi_yatirimi):
-        e_arac = round(p.arac_sayisi * elektrik_orani)
-        y_arac = p.arac_sayisi - e_arac
-        arac_yatirim = e_arac * (p.elektrik_arac_birim_maliyet - p.yakit_arac_birim_maliyet)
-        toplam_ilk_yatirim = max(0, arac_yatirim) + altyapi_yatirimi
+        e_arac = round(int(p.arac_sayisi) * elektrik_orani)
+        y_arac = int(p.arac_sayisi) - e_arac
+        arac_yatirim = e_arac * (int(p.elektrik_arac_birim_maliyet) - int(p.yakit_arac_birim_maliyet))
+        toplam_ilk_yatirim = max(0, arac_yatirim) + int(altyapi_yatirimi)
 
         kumulatif_kar = -toplam_ilk_yatirim
         bas_bas = None
@@ -129,9 +134,9 @@ def dinamik_analiz_motoru():
 
         for yil in yillar:
             bf = (1 + enflasyon) ** (yil - 1)
-            mevcut_gider = p.arac_sayisi * 12 * ((p.aylik_yakit_gideri + p.aylik_bakim_gideri) * bf)
-            e_gider = e_arac * 12 * ((p.aylik_elektrik_gideri + p.aylik_elektrik_bakim_gideri) * bf)
-            y_gider = y_arac * 12 * ((p.aylik_yakit_gideri + p.aylik_bakim_gideri) * bf)
+            mevcut_gider = int(p.arac_sayisi) * 12 * ((int(p.aylik_yakit_gideri) + int(p.aylik_bakim_gideri)) * bf)
+            e_gider = e_arac * 12 * ((int(p.aylik_elektrik_gideri) + int(p.aylik_elektrik_bakim_gideri)) * bf)
+            y_gider = y_arac * 12 * ((int(p.aylik_yakit_gideri) + int(p.aylik_bakim_gideri)) * bf)
             senaryo_gider = e_gider + y_gider
 
             yillik_tasarruf = mevcut_gider - senaryo_gider
@@ -161,8 +166,7 @@ if st.session_state.step == 4:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # DOM'u yoran st.table yerine HTML karmaşasından uzak st.dataframe'i temizce kullanalım
-    son_yil_idx = st.session_state.analiz_yili - 1
+    son_yil_idx = int(st.session_state.analiz_yili) - 1
     ozet_df = pd.DataFrame({
         "Dönüştürülen Araç": [f"{s1['e_arac']} araç", f"{s2['e_arac']} araç", f"{s3['e_arac']} araç"],
         "İlk Yatırım Maliyeti": [fmt_k(s1['toplam_ilk_yatirim']), fmt_k(s2['toplam_ilk_yatirim']), fmt_k(s3['toplam_ilk_yatirim'])],
@@ -173,7 +177,6 @@ if st.session_state.step == 4:
 
     st.markdown("---")
     
-    # Hatalı DOM re-render'ı önlemek için radio butonuna key veriyoruz
     chart_type = st.radio(
         "Grafik Görünümü Seçin:",
         ["📈 Başabaş Analizi", "📊 Yıllık Tasarruf", "💰 Yıllık İşletme Gideri"],
@@ -183,7 +186,7 @@ if st.session_state.step == 4:
 
     chart_layout = dict(
         paper_bgcolor=COLORS["card"], plot_bgcolor=COLORS["surface"],
-        font=dict(color=COLORS["text"]),
+        font=dict(color="#e2e8f0"),
         xaxis=dict(gridcolor=f"{COLORS['border']}44", title="Yıllar"),
         yaxis=dict(gridcolor=f"{COLORS['border']}44"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
@@ -200,9 +203,9 @@ if st.session_state.step == 4:
 
     elif "Tasarruf" in chart_type:
         fig = fgo.Figure()
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['yillik_tasarruf'] for v in s1['veriler']], name="S1 Tasarruf", fill='tonexty', line=dict(color=COLORS['s1'])))
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['yillik_tasarruf'] for v in s2['veriler']], name="S2 Tasarruf", fill='tonexty', line=dict(color=COLORS['s2'])))
-        fig.add_trace(fgo.Scatter(x=yillar, y=[v['yillik_tasarruf'] for v in s3['veriler']], name="S3 Tasarruf", fill='tonexty', line=dict(color=COLORS['s3'])))
+        fig.add_trace(fgo.Scatter(x=yillar, y=[v['yillik_tasarruf'] for v in s1['veriler']], name="S1 Tasarruf", line=dict(color=COLORS['s1'])))
+        fig.add_trace(fgo.Scatter(x=yillar, y=[v['yillik_tasarruf'] for v in s2['veriler']], name="S2 Tasarruf", line=dict(color=COLORS['s2'])))
+        fig.add_trace(fgo.Scatter(x=yillar, y=[v['yillik_tasarruf'] for v in s3['veriler']], name="S3 Tasarruf", line=dict(color=COLORS['s3'])))
         fig.update_layout(title="Net Yıllık İşletme Tasarrufu", **chart_layout)
         st.plotly_chart(fig, use_container_width=True, key="plotly_savings")
 
