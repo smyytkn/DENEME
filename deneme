@@ -126,7 +126,55 @@ hesapla = st.sidebar.button("🚀 Analizi Çalıştır", use_container_width=Tru
 
 if not hesapla:
     st.info("👈 Sol panelden filo bilgilerini girin ve **Analizi Çalıştır** butonuna tıklayın.")
-    st.stop()
+# ... Yukarıdaki tüm kodlar aynı kalıyor ...
+
+hesapla = st.sidebar.button("🚀 Analizi Çalıştır", use_container_width=True, type="primary")
+
+# st.stop() KULLANMAK YERİNE IF-ELSE YAPISINA GEÇİYORUZ:
+if hesapla:
+    # ─────────────────────────────────────────────────────────────────────────────
+    # BÖLÜM 4 – SENARYO TANIMLARI (Tüm analiz kodları artık bu if'in içinde)
+    # ─────────────────────────────────────────────────────────────────────────────
+    n_otobüs_s1 = max(1, round(n_otobüs_mevcut / 3))
+    n_otobüs_s2 = max(1, round(2 * n_otobüs_mevcut / 3))
+    n_otobüs_s3 = n_otobüs_mevcut
+
+    n_minibüs_s1 = round(n_minibüs_mevcut / 3)
+    n_minibüs_s2 = round(2 * n_minibüs_mevcut / 3)
+    n_minibüs_s3 = n_minibüs_mevcut
+
+    md = dict(otobüs_dizel=n_otobüs_mevcut, otobüs_ev=0,
+              minibüs_dizel=n_minibüs_mevcut, minibüs_ev=0)
+
+    s1 = dict(otobüs_dizel=n_otobüs_mevcut - n_otobüs_s1, otobüs_ev=n_otobüs_s1,
+              minibüs_dizel=n_minibüs_mevcut - n_minibüs_s1, minibüs_ev=n_minibüs_s1)
+
+    s2 = dict(otobüs_dizel=n_otobüs_mevcut - n_otobüs_s2, otobüs_ev=n_otobüs_s2,
+              minibüs_dizel=n_minibüs_mevcut - n_minibüs_s2, minibüs_ev=n_minibüs_s2)
+
+    s3 = dict(otobüs_dizel=0, otobüs_ev=n_otobüs_mevcut,
+              minibüs_dizel=0, minibüs_ev=n_minibüs_mevcut)
+
+    st.subheader("📊 Senaryo Tanımları")
+    senaryo_df = pd.DataFrame([
+        {"Senaryo": ETIKET["MD"], "Dizel Otobüs": md["otobüs_dizel"], "EV Otobüs": md["otobüs_ev"],
+         "Dizel Minibüs": md["minibüs_dizel"], "EV Minibüs": md["minibüs_ev"]},
+        {"Senaryo": ETIKET["S1"], "Dizel Otobüs": s1["otobüs_dizel"], "EV Otobüs": s1["otobüs_ev"],
+         "Dizel Minibüs": s1["minibüs_dizel"], "EV Minibüs": s1["minibüs_ev"]},
+        {"Senaryo": ETIKET["S2"], "Dizel Otobüs": s2["otobüs_dizel"], "EV Otobüs": s2["otobüs_ev"],
+         "Dizel Minibüs": s2["minibüs_dizel"], "EV Minibüs": s2["minibüs_ev"]},
+        {"Senaryo": ETIKET["S3"], "Dizel Otobüs": s3["otobüs_dizel"], "EV Otobüs": s3["otobüs_ev"],
+         "Dizel Minibüs": s3["minibüs_dizel"], "EV Minibüs": s3["minibüs_ev"]},
+    ])
+    st.dataframe(senaryo_df, use_container_width=True, hide_index=True)
+
+    # ... BUNDAN SONRA GELEN TÜM EMİSYON, GRAFİK VE MALİYET KODLARINI SEÇİP 
+    # ... BİR TAB (4 BOŞLUK) İÇERİ ALIN (SAĞA KAYDIRIN) ...
+    # ... Kodun en sonundaki "st.info(... Sistem Parametreleri)" satırı dahil!
+
+else:
+    # Butona basılmadığında sadece bu uyarı görünecek ve sayfa kırılmayacak
+    st.info("👈 Sol panelden filo bilgilerini girin ve **Analizi Çalıştır** butonuna tıklayın.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BÖLÜM 4 – SENARYO TANIMLARI
