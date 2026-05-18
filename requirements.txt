@@ -2,4 +2,7 @@ streamlit
 pandas
 numpy
 matplotlib
+matplotlib.pyplot
+matplotlib.patches
+matplotlib.ticker
 warnings
